@@ -26,6 +26,8 @@ try:
     with cp.connectioncp:
         with cp.connectioncp.cursor() as cursor:
             cursor3 = cp.connectioncp.cursor()
+            # Start timing the script execution
+            start_time = time.time()
             strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
             cp.f_setservervariable("strsparqlcrawlerstartdatetime",strnow,"Date and time of the last start of the Wikidata SPARQL crawler",0)
             strtotalruntimedesc = "Total runtime of the Wikidata SPARQL crawler"
@@ -43,7 +45,7 @@ try:
             #arrwikidatascope = {110: 'item fix INSTANCE_OF'}
             #arrwikidatascope = {110: 'item fix INSTANCE_OF', 112: 'move item to person', 113: 'person refresh'}
             #arrwikidatascope = {111: 'cleaning'}
-            arrwikidatascope = {105: 'person properties', 115: 'person properties VIP', 104: 'movie properties', 109: 'item add'}
+            arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 109: 'item add'}
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
                 strprocessesexecuted += str(intindex) + ", "
@@ -260,7 +262,6 @@ try:
                         # Enable the following SQL query to update all persons with VIP status 
                         strsql = f"""SELECT DISTINCT T_WC_TMDB_PERSON.ID_WIKIDATA, T_WC_TMDB_PERSON.NAME, T_WC_TMDB_PERSON.ID_PERSON, T_WC_TMDB_PERSON.POPULARITY 
                         FROM T_WC_TMDB_PERSON 
-                        INNER JOIN T_WC_WIKIDATA_PERSON ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON.ID_WIKIDATA 
                         INNER JOIN T_WC_TMDB_PERSON_SEARCH ON T_WC_TMDB_PERSON.ID_PERSON = T_WC_TMDB_PERSON_SEARCH.ID_PERSON 
 WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' 
 AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' 
