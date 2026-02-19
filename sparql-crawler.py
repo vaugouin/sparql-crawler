@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import time
 import pymysql.cursors
 import citizenphil as cp
+import tmdb_functions as tf
 from datetime import datetime, timedelta
 import csv
 import pandas as pd
@@ -45,7 +46,8 @@ try:
             #arrwikidatascope = {110: 'item fix INSTANCE_OF'}
             #arrwikidatascope = {110: 'item fix INSTANCE_OF', 112: 'move item to person', 113: 'person refresh'}
             #arrwikidatascope = {111: 'cleaning'}
-            arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 109: 'item add'}
+            arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 109: 'item add'}
+            arrwikidatascope = {114: 'serie properties'}
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
                 strprocessesexecuted += str(intindex) + ", "
@@ -253,7 +255,112 @@ try:
                                     lngretryafter = 60
                                     print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                     time.sleep(lngretryafter)
-                            cp.f_tmdbmoviesetwikidatacompleted(lngid)
+                            tf.f_tmdbmoviesetwikidatacompleted(lngid)
+                            
+                if intindex == 114:
+                    # Wikidata serie properties data download
+                    cp.f_setservervariable("strsparqlcrawlerseriepropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    strsql = ""
+                    strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_WIKIDATA, T_WC_TMDB_SERIE.TITLE, T_WC_TMDB_SERIE.ORIGINAL_TITLE, T_WC_TMDB_SERIE.FIRST_AIR_YEAR, T_WC_TMDB_SERIE.LAST_AIR_YEAR, T_WC_TMDB_SERIE.ID_SERIE, T_WC_TMDB_SERIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
+                    strsql += "FROM T_WC_TMDB_SERIE "
+                    #strsql += "INNER JOIN T_WC_WIKIDATA_SERIE ON T_WC_TMDB_SERIE.ID_WIKIDATA = T_WC_WIKIDATA_SERIE.ID_WIKIDATA "
+                    strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_SERIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
+                    strsql += "WHERE T_WC_TMDB_SERIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_SERIE.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_SERIE.ID_WIKIDATA LIKE 'Q%' "
+                    strsql += "AND (T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    #strsql += "AND (T_WC_TMDB_SERIE.ID_SERIE IN ( "
+                    #strsql += "SELECT ID_SERIE FROM T_WC_TMDB_SERIE_LIST WHERE ID_LIST IN ( "
+                    #strsql += "SELECT ID_LIST FROM T_WC_TMDB_LIST WHERE DELETED = 0 AND USE_FOR_TAGGING >= 1 "
+                    #strsql += ") "
+                    #strsql += ") "
+                    #strsql += "OR (T_WC_WIKIDATA_MOVIE.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE.ID_CRITERION <> 0) "
+                    #strsql += ") "
+                    #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
+                    #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
+                    strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
+                    strsql += "LIMIT 1000 "
+                    # strsql += "LIMIT 1 "
+                    if strsql != "":
+                        print(strsql)
+                        #cp.f_setservervariable("strsparqlcrawlercurrentsql",strsql,"Current SQL query in the SPARQL Wikidata crawler",0)
+                        cursor.execute(strsql)
+                        lngrowcount = cursor.rowcount
+                        print(f"{lngrowcount} lines")
+                        results = cursor.fetchall()
+                        for row3 in results:
+                            # print("------------------------------------------")
+                            strwikidataid = row3['ID_WIKIDATA']
+                            lngid = row3['ID_SERIE']
+                            strserieoriginaltitle = row3['TITLE']
+                            strserieoriginaltitle = row3['ORIGINAL_TITLE']
+                            strfirstairyear = row3['FIRST_AIR_YEAR']
+                            strlastairyear = row3['LAST_AIR_YEAR']
+                            dblimdbrating = row3['averageRating']
+                            #cp.f_setservervariable("strsparqlcrawlercurrentvalue",str(lngid),"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlerseriepropertiescurrentvalue",str(dblimdbrating),"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlerseriepropertieswikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            strmessage = f"{lngid} {strserieoriginaltitle} ({strfirstairyear}-{strlastairyear})"
+                            if strserieoriginaltitle != strserieoriginaltitle:
+                                strmessage += f" AKA {strserieoriginaltitle}"
+                            strmessage += f" {dblimdbrating} {strwikidataid}"
+                            print(strmessage)
+                            intencore = True
+                            while intencore:
+                                time.sleep(5)
+                                # Define the SPARQL query
+                                strlang = "en"
+                                strsparqlquery = ""
+                                strsparqlquery += "SELECT ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "  wd:" + strwikidataid + " ?p ?statement . "
+                                strsparqlquery += "  ?statement ?ps ?value . "
+                                strsparqlquery += "  ?property wikibase:claim ?p . "
+                                strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "} "
+                                strsparqlquery += "ORDER BY ?property ?propertyLabel "
+                                # Initialize the SPARQL wrapper
+                                sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
+                                # Set the query and return format
+                                print(strsparqlquery)
+                                sparql.setQuery(strsparqlquery)
+                                sparql.setReturnFormat(JSON)
+                                # Execute the query and convert the results
+                                try:
+                                    query_result = sparql.query()
+                                    results = query_result.convert()
+                                    intencore = False
+                                    df = pd.json_normalize(results['results']['bindings'])
+                                    if not df.empty:
+                                        for index, row in df.iterrows():
+                                            strproperty = row['property.value']
+                                            # Compute strpropertyid
+                                            strpropertyid = ""
+                                            strpropertyid = strproperty.split('/')[-1]
+                                            stritemid = ""
+                                            if 'value.value' in row:
+                                                if row['value.value']:
+                                                    if not pd.isna(row['value.value']):
+                                                        stritem = row['value.value']
+                                                        stritemid = stritem.split('/')[-1]
+                                            arritemcouples = {}
+                                            arritemcouples["ID_WIKIDATA"] = strwikidataid
+                                            arritemcouples["ID_PROPERTY"] = strpropertyid
+                                            arritemcouples["ID_ITEM"] = stritemid
+                                            strsqltablename = "T_WC_WIKIDATA_ITEM_PROPERTY"
+                                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND ID_PROPERTY = '{strpropertyid}' AND ID_ITEM = '{stritemid}'"
+                                            cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
+                                except SPARQLExceptions.EndPointInternalError as e:
+                                    print(f"Internal Server Error: {e}")
+                                except SPARQLExceptions.QueryBadFormed as e:
+                                    print(f"Badly Formed Query: {e}")
+                                except SPARQLExceptions.EndPointNotFound as e:
+                                    print(f"Endpoint Not Found: {e}")
+                                except Exception as e:
+                                    print(f"An error occurred: {e}")
+                                    lngretryafter = 60
+                                    print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
+                                    time.sleep(lngretryafter)
+                            tf.f_tmdbseriesetwikidatacompleted(lngid)
                             
                 if intindex == 105 or intindex == 115:
                     # Wikidata person properties data download
@@ -357,7 +464,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                     lngretryafter = 60
                                     print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                     time.sleep(lngretryafter)
-                            cp.f_tmdbpersonsetwikidatacompleted(lngid)
+                            tf.f_tmdbpersonsetwikidatacompleted(lngid)
                 if intindex == 106:
                     # Wikidata movie aliases data download
                     cp.f_setservervariable("strsparqlcrawlermoviealiasescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
