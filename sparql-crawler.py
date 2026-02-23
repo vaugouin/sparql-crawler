@@ -47,7 +47,7 @@ try:
             #arrwikidatascope = {110: 'item fix INSTANCE_OF', 112: 'move item to person', 113: 'person refresh'}
             #arrwikidatascope = {111: 'cleaning'}
             arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 109: 'item add'}
-            arrwikidatascope = {114: 'serie properties'}
+
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
                 strprocessesexecuted += str(intindex) + ", "
@@ -159,6 +159,7 @@ try:
                     #strsql += "INNER JOIN T_WC_WIKIDATA_MOVIE ON T_WC_TMDB_MOVIE.ID_WIKIDATA = T_WC_WIKIDATA_MOVIE.ID_WIKIDATA "
                     strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_MOVIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
                     strsql += "WHERE T_WC_TMDB_MOVIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_MOVIE.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA LIKE 'Q%' "
                     strsql += "AND (T_WC_TMDB_MOVIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_MOVIE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
                     #strsql += "AND (T_WC_TMDB_MOVIE.ID_MOVIE IN ( "
@@ -266,6 +267,7 @@ try:
                     #strsql += "INNER JOIN T_WC_WIKIDATA_SERIE ON T_WC_TMDB_SERIE.ID_WIKIDATA = T_WC_WIKIDATA_SERIE.ID_WIKIDATA "
                     strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_SERIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
                     strsql += "WHERE T_WC_TMDB_SERIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_SERIE.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_SERIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_SERIE.ID_WIKIDATA LIKE 'Q%' "
                     strsql += "AND (T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
                     #strsql += "AND (T_WC_TMDB_SERIE.ID_SERIE IN ( "
@@ -371,6 +373,7 @@ try:
                         FROM T_WC_TMDB_PERSON 
                         INNER JOIN T_WC_TMDB_PERSON_SEARCH ON T_WC_TMDB_PERSON.ID_PERSON = T_WC_TMDB_PERSON_SEARCH.ID_PERSON 
 WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' 
+AND T_WC_TMDB_PERSON.ID_WIKIDATA REGEXP '^Q[0-9]+$'
 AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' 
 AND (T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED < '{strdatjminus100}') 
 ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC 
@@ -382,6 +385,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         strsql += "FROM T_WC_TMDB_PERSON "
                         #strsql += "INNER JOIN T_WC_WIKIDATA_PERSON ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON.ID_WIKIDATA "
                         strsql += "WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' "
+                        strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                         strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' "
                         strsql += "AND (T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
                         strsql += "ORDER BY T_WC_TMDB_PERSON.POPULARITY DESC "
@@ -474,6 +478,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "INNER JOIN T_WC_WIKIDATA_MOVIE ON T_WC_TMDB_MOVIE.ID_WIKIDATA = T_WC_WIKIDATA_MOVIE.ID_WIKIDATA "
                     strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_MOVIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
                     strsql += "WHERE T_WC_TMDB_MOVIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_MOVIE.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA LIKE 'Q%' "
                     strsql += "AND T_WC_WIKIDATA_MOVIE.ALIASES IS NULL "
                     #strsql += "AND (T_WC_TMDB_MOVIE.ID_MOVIE IN ( "
@@ -564,6 +569,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "FROM T_WC_TMDB_PERSON "
                     strsql += "INNER JOIN T_WC_WIKIDATA_PERSON ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON.ID_WIKIDATA "
                     strsql += "WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' "
                     strsql += "AND T_WC_WIKIDATA_PERSON.ALIASES IS NULL "
                     #strsql += "AND T_WC_TMDB_PERSON.ID_PERSON = 3829 "
