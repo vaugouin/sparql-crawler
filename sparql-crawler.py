@@ -9,6 +9,7 @@ import tmdb_functions as tf
 from datetime import datetime, timedelta
 import csv
 import pandas as pd
+import re
 from SPARQLWrapper import SPARQLWrapper, SPARQLExceptions, JSON
 
 # Load .env file 
@@ -47,6 +48,7 @@ try:
             #arrwikidatascope = {110: 'item fix INSTANCE_OF', 112: 'move item to person', 113: 'person refresh'}
             #arrwikidatascope = {111: 'cleaning'}
             arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 109: 'item add'}
+            arrwikidatascope = {109: 'item add', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties'}
 
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
@@ -100,6 +102,9 @@ try:
                                     if row['propertyLabel.value']:
                                         if not pd.isna(row['propertyLabel.value']):
                                             strlabel = row['propertyLabel.value']
+                                            # reject any label that looks like a Wikidata ID
+                                            if re.match(r'^[QPL]\d+$', strlabel):
+                                                strlabel = ""
                                 # Compute strdescription
                                 strdescription = ""
                                 if 'propertyDescription.value' in row:
@@ -646,10 +651,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "SELECT DISTINCT ID_ITEM "
                     strsql += "FROM T_WC_WIKIDATA_ITEM_PROPERTY "
                     strsql += "WHERE ID_ITEM LIKE 'Q%' "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM) "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON) "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE) "
-                    strsql += "LIMIT 1000 "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM WHERE LABEL <> '' AND LABEL IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON WHERE NAME <> '' AND NAME IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE WHERE TITLE <> '' AND TITLE IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_SERIE WHERE TITLE <> '' AND TITLE IS NOT NULL) "
+                    strsql += "LIMIT 5000 "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -664,6 +670,10 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                             #print(f"{strdesc} id: {strwikidataid}")
                             arrlang = {1: 'en', 2: 'fr'}
                             for intlang, strlang in arrlang.items():
+                                if strlang == "en":
+                                    strlangfull = "en,de,es,it,pt,ru,zh,ja,fr,nl,sv,pl,fi,cs,hu,da,ro,ko,ar,he,el,vi,th,uk,ca,eo,gl,la,li,lt,ms,nn,oc,or,ps,qu,sa,sc,sr,sw,tg,tk,tl,tt,ug,ve,wuu,xh,yor,zul"
+                                elif strlang == "fr":
+                                    strlangfull = "fr,en,de,es,it,pt,ru,zh,ja"
                                 intencore = True
                                 while intencore:
                                     time.sleep(5)
@@ -673,7 +683,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                     strsparqlquery += "VALUES ?item { wd:" + strwikidataid + " } "
                                     strsparqlquery += "OPTIONAL { ?item wdt:P31 ?instanceOf } "
                                     strsparqlquery += "SERVICE wikibase:label {  "
-                                    strsparqlquery += "bd:serviceParam wikibase:language \"" + strlang + "\". "
+                                    strsparqlquery += "bd:serviceParam wikibase:language \"" + strlangfull + "\". "
                                     strsparqlquery += "} "
                                     strsparqlquery += "OPTIONAL { ?item skos:altLabel ?itemAlias. FILTER (LANG(?itemAlias) = \"" + strlang + "\") } "
                                     strsparqlquery += "} "
@@ -701,6 +711,9 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                                         if row['itemLabel.value']:
                                                             if not pd.isna(row['itemLabel.value']):
                                                                 strlabel = row['itemLabel.value']
+                                                                # reject any label that looks like a Wikidata ID
+                                                                if re.match(r'^[QPL]\d+$', strlabel):
+                                                                    strlabel = ""
                                                 if strdescription == "":
                                                     if 'itemDescription.value' in row:
                                                         if row['itemDescription.value']:
