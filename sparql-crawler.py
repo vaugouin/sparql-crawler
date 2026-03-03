@@ -48,7 +48,10 @@ try:
             #arrwikidatascope = {110: 'item fix INSTANCE_OF', 112: 'move item to person', 113: 'person refresh'}
             #arrwikidatascope = {111: 'cleaning'}
             arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 109: 'item add'}
-            arrwikidatascope = {109: 'item add', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties'}
+            arrwikidatascope = {109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties'}
+            if strnow <= "2026-03-18 00:00:00":
+                # The item add process is executed in priority until March 10, 2026 to quickly populate the T_WC_WIKIDATA_ITEM table and then be able to use this data in the other processes
+                arrwikidatascope = {112: 'move item to person', 109: 'item add'}
 
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
@@ -647,15 +650,20 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                 if intindex == 109:
                     # Wikidata items data download, new (109)
                     cp.f_setservervariable("strsparqlcrawleritemscurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    strwikidataidold = cp.f_getservervariable("strsparqlcrawleritemswikidataid",0)
+                    rows_to_process = 5000
                     strsql = ""
                     strsql += "SELECT DISTINCT ID_ITEM "
                     strsql += "FROM T_WC_WIKIDATA_ITEM_PROPERTY "
                     strsql += "WHERE ID_ITEM LIKE 'Q%' "
+                    if strwikidataidold != "":
+                        strsql += f"AND ID_ITEM > '{strwikidataidold}' "
                     strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM WHERE LABEL <> '' AND LABEL IS NOT NULL) "
                     strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON WHERE NAME <> '' AND NAME IS NOT NULL) "
                     strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE WHERE TITLE <> '' AND TITLE IS NOT NULL) "
                     strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_SERIE WHERE TITLE <> '' AND TITLE IS NOT NULL) "
-                    strsql += "LIMIT 5000 "
+                    strsql += "ORDER BY ID_ITEM "
+                    strsql += f"LIMIT {rows_to_process} "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -753,6 +761,9 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                         lngretryafter = 60
                                         print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                         time.sleep(lngretryafter)
+                        if lngrowcount < rows_to_process:
+                            # We finished crawling all items, we can reset the last Wikidata ID to process
+                            cp.f_setservervariable("strsparqlcrawleritemswikidataid","", "Current Wikidata ID in the current Wikidata SPARQL crawler",0)
                 if intindex == 110:
                     # Wikidata items data download, fix INSTANCE_OF (110)
                     cp.f_setservervariable("strsparqlcrawleritemscurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
@@ -832,15 +843,15 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                         print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                         time.sleep(lngretryafter)
                 if intindex == 112:
-                    # Wikidata movie items to person when INSTANCE_OF is Q5
+                    # Wikidata move items to person when INSTANCE_OF is Q5
                     cp.f_setservervariable("strsparqlcrawleritemscurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
                     strsql = ""
                     strsql += "SELECT * FROM T_WC_WIKIDATA_ITEM "
                     strsql += "WHERE INSTANCE_OF = 'Q5' "
                     strsql += "AND LANG = 'en' "
-                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON) "
+                    #strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON) "
                     strsql += "ORDER BY TIM_UPDATED ASC "
-                    strsql += "LIMIT 1 "
+                    #strsql += "LIMIT 1 "
                     #strsql += "LIMIT 1000 "
                     if strsql != "":
                         print(strsql)
@@ -853,17 +864,47 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                             strname = row3['LABEL']
                             straliases = row3['ALIASES']
                             strinstanceofid = row3['INSTANCE_OF']
+                            strimagepath = row3['WIKIPEDIA_IMAGE_PATH']
                             cp.f_setservervariable("strsparqlcrawleritemfixinstanceofcurrentvalue",strwikidataid,"Current value in the current Wikidata SPARQL crawler",0)
                             cp.f_setservervariable("strsparqlcrawleritemfixinstanceofwikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
-                            arrpersoncouples = {}
-                            arrpersoncouples["ID_WIKIDATA"] = strwikidataid
-                            arrpersoncouples["NAME"] = strname
-                            arrpersoncouples["ALIASES"] = straliases
-                            arrpersoncouples["INSTANCE_OF"] = strinstanceofid
-                            strsqltablename = "T_WC_WIKIDATA_PERSON"
-                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
-                            cp.f_sqlupdatearray(strsqltablename,arrpersoncouples,strsqlupdatecondition,1)
-                            
+                            strsqlperson = "SELECT * FROM T_WC_WIKIDATA_PERSON WHERE ID_WIKIDATA = '" + strwikidataid + "' "
+                            cursor3.execute(strsqlperson)
+                            lngrowcountperson = cursor3.rowcount
+                            if lngrowcountperson == 0:
+                                # Person does not exist in T_WC_WIKIDATA_PERSON, we can move it
+                                print(f"Moving {strwikidataid} {strname} to person")
+                                arrpersoncouples = {}
+                                arrpersoncouples["ID_WIKIDATA"] = strwikidataid
+                                arrpersoncouples["NAME"] = strname
+                                arrpersoncouples["ALIASES"] = straliases
+                                arrpersoncouples["INSTANCE_OF"] = strinstanceofid
+                                arrpersoncouples["WIKIPEDIA_PROFILE_PATH"] = strimagepath
+                                strsqltablename = "T_WC_WIKIDATA_PERSON"
+                                strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
+                                cp.f_sqlupdatearray(strsqltablename,arrpersoncouples,strsqlupdatecondition,1)
+                            else:
+                                # Person already exists in T_WC_WIKIDATA_PERSON, so we move only non empty values 
+                                print(f"Updating {strwikidataid} {strname} in person")
+                                results2 = cursor3.fetchall()
+                                row2 = results2[0]
+                                strnameperson = row2['NAME']
+                                straliasesperson = row2['ALIASES']
+                                strinstanceofperson = row2['INSTANCE_OF']
+                                strwikipediaprofilepathperson = row2['WIKIPEDIA_PROFILE_PATH']
+                                arrpersoncouples = {}
+                                if strname != "" and (strnameperson == "" or strnameperson is None):
+                                    arrpersoncouples["NAME"] = strname
+                                if straliases != "" and (straliasesperson == "" or straliasesperson is None):
+                                    arrpersoncouples["ALIASES"] = straliases
+                                if strinstanceofid != "" and (strinstanceofperson == "" or strinstanceofperson is None):
+                                    arrpersoncouples["INSTANCE_OF"] = strinstanceofid
+                                if strimagepath != "" and (strwikipediaprofilepathperson == "" or strwikipediaprofilepathperson is None):
+                                    arrpersoncouples["WIKIPEDIA_PROFILE_PATH"] = strimagepath
+                                if arrpersoncouples:
+                                    strsqltablename = "T_WC_WIKIDATA_PERSON"
+                                    strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
+                                    cp.f_sqlupdatearray(strsqltablename,arrpersoncouples,strsqlupdatecondition,1)
+                            # After moving the item to person, we can delete it from T_WC_WIKIDATA_ITEM
                             strsqldelete = "DELETE FROM T_WC_WIKIDATA_ITEM WHERE ID_WIKIDATA = '" + strwikidataid + "' "
                             print(f"{strsqldelete}")
                             cursor3.execute(strsqldelete)
