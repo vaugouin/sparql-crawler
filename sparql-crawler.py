@@ -25,9 +25,10 @@ strprocessesexecuted = ""
 cp.f_setservervariable("strsparqlcrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
 
 try:
-    with cp.connectioncp:
-        with cp.connectioncp.cursor() as cursor:
-            cursor3 = cp.connectioncp.cursor()
+    conn = cp.f_getconnection()
+    with conn:
+        with conn.cursor() as cursor:
+            cursor3 = conn.cursor()
             # Start timing the script execution
             start_time = time.time()
             strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -35,8 +36,24 @@ try:
             strtotalruntimedesc = "Total runtime of the Wikidata SPARQL crawler"
             strtotalruntimeprevious = cp.f_getservervariable("strsparqlcrawlertotalruntime",0)
             cp.f_setservervariable("strsparqlcrawlertotalruntimeprevious",strtotalruntimeprevious,strtotalruntimedesc + " (previous execution)",0)
-            strtotalruntime = ""
+            strtotalruntime = "RUNNING"
             cp.f_setservervariable("strsparqlcrawlertotalruntime",strtotalruntime,strtotalruntimedesc,0)
+
+            # Retrieving instance of values for persons (humans) used in Wikidata Sparql queries
+            strsparqlpersoninstanceof = cp.f_getservervariable("strsparqlaltcrawlerpersoninstanceof",0)
+            if strsparqlpersoninstanceof == "":
+                strsparqlpersoninstanceof = "Q5"
+                cp.f_setservervariable("strsparqlaltcrawlerpersoninstanceof",strsparqlpersoninstanceof,"Instances of values for persons (humans) used in Wikidata Sparql queries",0)
+            # Retrieving instance of values for movies used in Wikidata Sparql queries
+            strsparqlmovieinstanceof = cp.f_getservervariable("strsparqlaltcrawlermovieinstanceof",0)
+            if strsparqlmovieinstanceof == "":
+                strsparqlmovieinstanceof = "Q11424 Q202866 Q226730 Q24862 Q20650540 Q506240 Q17517379"
+                cp.f_setservervariable("strsparqlaltcrawlermovieinstanceof",strsparqlmovieinstanceof,"Instances of values for movies used in Wikidata Sparql queries",0)
+            # Retrieving instance of values for series used in Wikidata Sparql queries
+            strsparqlserieinstanceof = cp.f_getservervariable("strsparqlaltcrawlerserieinstanceof",0)
+            if strsparqlserieinstanceof == "":
+                strsparqlserieinstanceof = "Q5398426 Q1259759 Q117467246 Q63952888 Q15416"
+                cp.f_setservervariable("strsparqlaltcrawlerserieinstanceof",strsparqlserieinstanceof,"Instances of values for series used in Wikidata Sparql queries",0)
 
             #arrwikidatascope = {100: 'property'}
             #arrwikidatascope = {109: 'item'}
@@ -49,8 +66,8 @@ try:
             #arrwikidatascope = {111: 'cleaning'}
             arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 109: 'item add'}
             arrwikidatascope = {109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties'}
-            if strnow <= "2026-03-18 00:00:00":
-                # The item add process is executed in priority until March 10, 2026 to quickly populate the T_WC_WIKIDATA_ITEM table and then be able to use this data in the other processes
+            if strnow <= "2026-03-20 00:00:00":
+                # The item add process is executed in priority until March 10, 2026 to quickly populate the T_WC_WIKIDATA_ITEM_V1 table and then be able to use this data in the other processes
                 arrwikidatascope = {112: 'move item to person', 109: 'item add'}
 
             for intindex,strcontent in arrwikidatascope.items():
@@ -164,7 +181,7 @@ try:
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_WIKIDATA, T_WC_TMDB_MOVIE.TITLE, T_WC_TMDB_MOVIE.ORIGINAL_TITLE, T_WC_TMDB_MOVIE.DAT_RELEASE, T_WC_TMDB_MOVIE.ID_MOVIE, T_WC_TMDB_MOVIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_MOVIE "
-                    #strsql += "INNER JOIN T_WC_WIKIDATA_MOVIE ON T_WC_TMDB_MOVIE.ID_WIKIDATA = T_WC_WIKIDATA_MOVIE.ID_WIKIDATA "
+                    #strsql += "INNER JOIN T_WC_WIKIDATA_MOVIE_V1 ON T_WC_TMDB_MOVIE.ID_WIKIDATA = T_WC_WIKIDATA_MOVIE_V1.ID_WIKIDATA "
                     strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_MOVIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
                     strsql += "WHERE T_WC_TMDB_MOVIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_MOVIE.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
@@ -175,7 +192,7 @@ try:
                     #strsql += "SELECT ID_LIST FROM T_WC_TMDB_LIST WHERE DELETED = 0 AND USE_FOR_TAGGING >= 1 "
                     #strsql += ") "
                     #strsql += ") "
-                    #strsql += "OR (T_WC_WIKIDATA_MOVIE.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE.ID_CRITERION <> 0) "
+                    #strsql += "OR (T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION <> 0) "
                     #strsql += ") "
                     #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
                     #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
@@ -272,7 +289,7 @@ try:
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_WIKIDATA, T_WC_TMDB_SERIE.TITLE, T_WC_TMDB_SERIE.ORIGINAL_TITLE, T_WC_TMDB_SERIE.FIRST_AIR_YEAR, T_WC_TMDB_SERIE.LAST_AIR_YEAR, T_WC_TMDB_SERIE.ID_SERIE, T_WC_TMDB_SERIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_SERIE "
-                    #strsql += "INNER JOIN T_WC_WIKIDATA_SERIE ON T_WC_TMDB_SERIE.ID_WIKIDATA = T_WC_WIKIDATA_SERIE.ID_WIKIDATA "
+                    #strsql += "INNER JOIN T_WC_WIKIDATA_SERIE_V1 ON T_WC_TMDB_SERIE.ID_WIKIDATA = T_WC_WIKIDATA_SERIE_V1.ID_WIKIDATA "
                     strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_SERIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
                     strsql += "WHERE T_WC_TMDB_SERIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_SERIE.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_SERIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
@@ -283,7 +300,7 @@ try:
                     #strsql += "SELECT ID_LIST FROM T_WC_TMDB_LIST WHERE DELETED = 0 AND USE_FOR_TAGGING >= 1 "
                     #strsql += ") "
                     #strsql += ") "
-                    #strsql += "OR (T_WC_WIKIDATA_MOVIE.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE.ID_CRITERION <> 0) "
+                    #strsql += "OR (T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION <> 0) "
                     #strsql += ") "
                     #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
                     #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
@@ -391,7 +408,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         strsql = ""
                         strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_WIKIDATA, T_WC_TMDB_PERSON.NAME, T_WC_TMDB_PERSON.ID_PERSON, T_WC_TMDB_PERSON.POPULARITY "
                         strsql += "FROM T_WC_TMDB_PERSON "
-                        #strsql += "INNER JOIN T_WC_WIKIDATA_PERSON ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON.ID_WIKIDATA "
+                        #strsql += "INNER JOIN T_WC_WIKIDATA_PERSON_V1 ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON_V1.ID_WIKIDATA "
                         strsql += "WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' "
                         strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                         strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' "
@@ -483,18 +500,18 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_WIKIDATA, T_WC_TMDB_MOVIE.TITLE, T_WC_TMDB_MOVIE.ORIGINAL_TITLE, T_WC_TMDB_MOVIE.DAT_RELEASE, T_WC_TMDB_MOVIE.ID_MOVIE, T_WC_TMDB_MOVIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_MOVIE "
-                    strsql += "INNER JOIN T_WC_WIKIDATA_MOVIE ON T_WC_TMDB_MOVIE.ID_WIKIDATA = T_WC_WIKIDATA_MOVIE.ID_WIKIDATA "
+                    strsql += "INNER JOIN T_WC_WIKIDATA_MOVIE_V1 ON T_WC_TMDB_MOVIE.ID_WIKIDATA = T_WC_WIKIDATA_MOVIE_V1.ID_WIKIDATA "
                     strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_MOVIE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
                     strsql += "WHERE T_WC_TMDB_MOVIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_MOVIE.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += "AND T_WC_WIKIDATA_MOVIE.ALIASES IS NULL "
+                    strsql += "AND T_WC_WIKIDATA_MOVIE_V1.ALIASES IS NULL "
                     #strsql += "AND (T_WC_TMDB_MOVIE.ID_MOVIE IN ( "
                     #strsql += "SELECT ID_MOVIE FROM T_WC_TMDB_MOVIE_LIST WHERE ID_LIST IN ( "
                     #strsql += "SELECT ID_LIST FROM T_WC_TMDB_LIST WHERE DELETED = 0 AND USE_FOR_TAGGING >= 1 "
                     #strsql += ") "
                     #strsql += ") "
-                    #strsql += "OR (T_WC_WIKIDATA_MOVIE.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE.ID_CRITERION <> 0) "
+                    #strsql += "OR (T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION <> 0) "
                     #strsql += ") "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
                     strsql += "LIMIT 500 "
@@ -555,7 +572,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                     arritemcouples = {}
                                     arritemcouples["ID_WIKIDATA"] = strwikidataid
                                     arritemcouples["ALIASES"] = strmoviealiases
-                                    strsqltablename = "T_WC_WIKIDATA_MOVIE"
+                                    strsqltablename = "T_WC_WIKIDATA_MOVIE_V1"
                                     strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
                                     cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
                                 except SPARQLExceptions.EndPointInternalError as e:
@@ -575,11 +592,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_WIKIDATA, T_WC_TMDB_PERSON.NAME, T_WC_TMDB_PERSON.ID_PERSON, T_WC_TMDB_PERSON.POPULARITY "
                     strsql += "FROM T_WC_TMDB_PERSON "
-                    strsql += "INNER JOIN T_WC_WIKIDATA_PERSON ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON.ID_WIKIDATA "
+                    strsql += "INNER JOIN T_WC_WIKIDATA_PERSON_V1 ON T_WC_TMDB_PERSON.ID_WIKIDATA = T_WC_WIKIDATA_PERSON_V1.ID_WIKIDATA "
                     strsql += "WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += "AND T_WC_WIKIDATA_PERSON.ALIASES IS NULL "
+                    strsql += "AND T_WC_WIKIDATA_PERSON_V1.ALIASES IS NULL "
                     #strsql += "AND T_WC_TMDB_PERSON.ID_PERSON = 3829 "
                     strsql += "ORDER BY T_WC_TMDB_PERSON.POPULARITY DESC "
                     strsql += "LIMIT 1000 "
@@ -633,7 +650,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                     arritemcouples = {}
                                     arritemcouples["ID_WIKIDATA"] = strwikidataid
                                     arritemcouples["ALIASES"] = strpersonaliases
-                                    strsqltablename = "T_WC_WIKIDATA_PERSON"
+                                    strsqltablename = "T_WC_WIKIDATA_PERSON_V1"
                                     strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
                                     cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
                                 except SPARQLExceptions.EndPointInternalError as e:
@@ -658,10 +675,10 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "WHERE ID_ITEM LIKE 'Q%' "
                     if strwikidataidold != "":
                         strsql += f"AND ID_ITEM > '{strwikidataidold}' "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM WHERE LABEL <> '' AND LABEL IS NOT NULL) "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON WHERE NAME <> '' AND NAME IS NOT NULL) "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE WHERE TITLE <> '' AND TITLE IS NOT NULL) "
-                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_SERIE WHERE TITLE <> '' AND TITLE IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1 WHERE LABEL <> '' AND LABEL IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1 WHERE NAME <> '' AND NAME IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE_V1 WHERE TITLE <> '' AND TITLE IS NOT NULL) "
+                    strsql += "AND ID_ITEM NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_SERIE_V1 WHERE TITLE <> '' AND TITLE IS NOT NULL) "
                     strsql += "ORDER BY ID_ITEM "
                     strsql += f"LIMIT {rows_to_process} "
                     # strsql += "LIMIT 1 "
@@ -747,7 +764,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                             arritemcouples["DESCRIPTION"] = strdescription
                                             arritemcouples["ALIASES"] = straliases
                                             arritemcouples["INSTANCE_OF"] = strinstanceofid
-                                            strsqltablename = "T_WC_WIKIDATA_ITEM"
+                                            strsqltablename = "T_WC_WIKIDATA_ITEM_V1"
                                             strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND LANG = '{strlang}'"
                                             cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
                                     except SPARQLExceptions.EndPointInternalError as e:
@@ -768,7 +785,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     # Wikidata items data download, fix INSTANCE_OF (110)
                     cp.f_setservervariable("strsparqlcrawleritemscurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
                     strsql = ""
-                    strsql += "SELECT DISTINCT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM "
+                    strsql += "SELECT DISTINCT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1 "
                     strsql += "WHERE INSTANCE_OF IS NULL "
                     strsql += "ORDER BY TIM_UPDATED ASC "
                     #strsql += "LIMIT 100 "
@@ -826,7 +843,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                                 arritemcouples = {}
                                                 arritemcouples["ID_WIKIDATA"] = strwikidataid
                                                 arritemcouples["INSTANCE_OF"] = strinstanceofid
-                                                strsqltablename = "T_WC_WIKIDATA_ITEM"
+                                                strsqltablename = "T_WC_WIKIDATA_ITEM_V1"
                                                 strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' "
                                                 cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
                                                 strwikidataidall = ""
@@ -846,10 +863,14 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     # Wikidata move items to person when INSTANCE_OF is Q5
                     cp.f_setservervariable("strsparqlcrawleritemscurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
                     strsql = ""
-                    strsql += "SELECT * FROM T_WC_WIKIDATA_ITEM "
-                    strsql += "WHERE INSTANCE_OF = 'Q5' "
+                    strsql += "SELECT * FROM T_WC_WIKIDATA_ITEM_V1 "
+                    arrinstanceof = [v for v in strsparqlpersoninstanceof.split() if v]
+                    if not arrinstanceof:
+                        arrinstanceof = ["Q5"]
+                    strsqlinstanceof = ",".join([f"'{v}'" for v in arrinstanceof])
+                    strsql += f"WHERE INSTANCE_OF IN ({strsqlinstanceof}) "
                     strsql += "AND LANG = 'en' "
-                    #strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON) "
+                    #strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1) "
                     strsql += "ORDER BY TIM_UPDATED ASC "
                     #strsql += "LIMIT 1 "
                     #strsql += "LIMIT 1000 "
@@ -867,11 +888,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                             strimagepath = row3['WIKIPEDIA_IMAGE_PATH']
                             cp.f_setservervariable("strsparqlcrawleritemfixinstanceofcurrentvalue",strwikidataid,"Current value in the current Wikidata SPARQL crawler",0)
                             cp.f_setservervariable("strsparqlcrawleritemfixinstanceofwikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
-                            strsqlperson = "SELECT * FROM T_WC_WIKIDATA_PERSON WHERE ID_WIKIDATA = '" + strwikidataid + "' "
+                            strsqlperson = "SELECT * FROM T_WC_WIKIDATA_PERSON_V1 WHERE ID_WIKIDATA = '" + strwikidataid + "' "
                             cursor3.execute(strsqlperson)
                             lngrowcountperson = cursor3.rowcount
                             if lngrowcountperson == 0:
-                                # Person does not exist in T_WC_WIKIDATA_PERSON, we can move it
+                                # Person does not exist in T_WC_WIKIDATA_PERSON_V1, we can move it
                                 print(f"Moving {strwikidataid} {strname} to person")
                                 arrpersoncouples = {}
                                 arrpersoncouples["ID_WIKIDATA"] = strwikidataid
@@ -879,11 +900,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                 arrpersoncouples["ALIASES"] = straliases
                                 arrpersoncouples["INSTANCE_OF"] = strinstanceofid
                                 arrpersoncouples["WIKIPEDIA_PROFILE_PATH"] = strimagepath
-                                strsqltablename = "T_WC_WIKIDATA_PERSON"
+                                strsqltablename = "T_WC_WIKIDATA_PERSON_V1"
                                 strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
                                 cp.f_sqlupdatearray(strsqltablename,arrpersoncouples,strsqlupdatecondition,1)
                             else:
-                                # Person already exists in T_WC_WIKIDATA_PERSON, so we move only non empty values 
+                                # Person already exists in T_WC_WIKIDATA_PERSON_V1, so we move only non empty values 
                                 print(f"Updating {strwikidataid} {strname} in person")
                                 results2 = cursor3.fetchall()
                                 row2 = results2[0]
@@ -901,14 +922,14 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                 if strimagepath != "" and (strwikipediaprofilepathperson == "" or strwikipediaprofilepathperson is None):
                                     arrpersoncouples["WIKIPEDIA_PROFILE_PATH"] = strimagepath
                                 if arrpersoncouples:
-                                    strsqltablename = "T_WC_WIKIDATA_PERSON"
+                                    strsqltablename = "T_WC_WIKIDATA_PERSON_V1"
                                     strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}'"
                                     cp.f_sqlupdatearray(strsqltablename,arrpersoncouples,strsqlupdatecondition,1)
-                            # After moving the item to person, we can delete it from T_WC_WIKIDATA_ITEM
-                            strsqldelete = "DELETE FROM T_WC_WIKIDATA_ITEM WHERE ID_WIKIDATA = '" + strwikidataid + "' "
+                            # After moving the item to person, we can delete it from T_WC_WIKIDATA_ITEM_V1
+                            strsqldelete = "DELETE FROM T_WC_WIKIDATA_ITEM_V1 WHERE ID_WIKIDATA = '" + strwikidataid + "' "
                             print(f"{strsqldelete}")
                             cursor3.execute(strsqldelete)
-                            cp.connectioncp.commit()
+                            conn.commit()
                 if intindex == 111:
                     # T_WC_WIKIDATA_ITEM_PROPERTY de duplication
                     cp.f_setservervariable("strsparqlcrawleritemsdedupcurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
@@ -934,7 +955,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                 strsqldelete = "DELETE FROM T_WC_WIKIDATA_ITEM_PROPERTY WHERE ID_ROW = " + str(lngrowid)
                                 print(f"{strsqldelete}")
                                 cursor3.execute(strsqldelete)
-                                cp.connectioncp.commit()
+                                conn.commit()
                             strwikidataidprev = strwikidataid
                             strpropertyidprev = strpropertyid
                             stritemidprev = stritemid
@@ -956,5 +977,6 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
     print("Process completed")
 except pymysql.MySQLError as e:
     print(f"❌ MySQL Error: {e}")
-    cp.connectioncp.rollback()
-
+    conn = getattr(cp, "connectioncp", None)
+    if conn is not None and getattr(conn, "open", False):
+        conn.rollback()

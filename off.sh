@@ -1,2 +1,2 @@
-mv sparql-crawler.sh sparql-crawler-old.sh
+mv sparql-crawler.sh sparql-crawler-off.sh
 

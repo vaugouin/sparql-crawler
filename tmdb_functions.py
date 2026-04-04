@@ -4,23 +4,33 @@ import json
 from datetime import datetime
 import pytz
 import re
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 
 # Import from citizenphil or define locally
 import citizenphil as cp
-from citizenphil import f_sqlupdatearray, f_stringtosql, connectioncp
-import citizenphilsecrets as cps
+from citizenphil import f_sqlupdatearray, f_stringtosql
+
+load_dotenv(Path(__file__).resolve().with_name(".env"))
+
+class _ConnectionProxy:
+    def __getattr__(self, name):
+        return getattr(cp.f_getconnection(), name)
+
+connectioncp = _ConnectionProxy()
 
 # Global variables
-strtmdbapidomainurl = cps.strtmdbapidomainurl
-strtmdbapitoken = cps.strtmdbapitoken
-strsqlns = cps.strsqlns
+strtmdbapidomainurl = os.environ.get("TMDB_API_DOMAIN_URL", "")
+strtmdbapitoken = os.environ.get("TMDB_API_TOKEN", "")
+strsqlns = os.environ.get("DB_NAMESPACE", "")
 
 headers = {
     "accept": "application/json",
     "Authorization": "Bearer " + strtmdbapitoken
 }
 
-paris_tz = pytz.timezone(cps.strusertimezone)
+paris_tz = pytz.timezone(os.environ.get("USER_TIMEZONE", "Europe/Paris"))
 strdatepattern = r"^\d{4}-\d{2}-\d{2}$"
 strlanguagecountry = "en-US"
 strlanguage = "en"
@@ -450,9 +460,9 @@ def f_tmdbpersontosql(lngpersonid):
                     strpersonidimdb = data['imdb_id']
                 strpersonbiography = data['biography']
                 strpersonbirthday = data['birthday']
-                lngpersonbirthyear = 0
-                lngpersonbirthmonth = 0
-                lngpersonbirthday = 0
+                lngpersonbirthyear = None
+                lngpersonbirthmonth = None
+                lngpersonbirthday = None
                 if strpersonbirthday:
                     if not re.match(strdatepattern, strpersonbirthday):
                         # Date is invalid
@@ -460,9 +470,9 @@ def f_tmdbpersontosql(lngpersonid):
                     else:
                         lngpersonbirthyear, lngpersonbirthmonth, lngpersonbirthday = map(int, strpersonbirthday.split('-'))
                 strpersondeathday = data['deathday']
-                lngpersondeathyear = 0
-                lngpersondeathmonth = 0
-                lngpersondeathday = 0
+                lngpersondeathyear = None
+                lngpersondeathmonth = None
+                lngpersondeathday = None
                 if strpersondeathday:
                     if not re.match(strdatepattern, strpersondeathday):
                         # Date is invalid
@@ -2332,9 +2342,10 @@ def f_tmdbseriekeywordstosql(lngserieid):
         intencore = True
         intattemptsremaining = 5
         intsuccess = False
+        response = None
         while intencore:
             try:
-                response = requests.get(strtmdbapifullurl, headers=headers)
+                response = requests.get(strtmdbapifullurl, headers=headers, timeout=30)
                 intencore = False
                 intsuccess = True
             except requests.exceptions.HTTPError as http_err:
@@ -2349,14 +2360,14 @@ def f_tmdbseriekeywordstosql(lngserieid):
                 print(f'An error occurred: {err}')  # Handle any other exceptions
             if intencore:
                 intattemptsremaining = intattemptsremaining - 1
-                if intattemptsremaining >= 0:
+                if intattemptsremaining > 0:
                     time.sleep(1)  # Wait for 1 second before next request
                 else:
                     intencore = False
         if not intsuccess:
-            print(f"f_tmdbseriekeywordstosql({lngkeywordid}) failed!")
+            print(f"f_tmdbseriekeywordstosql({lngserieid}) failed!")
         else:
-            response = requests.get(strtmdbapifullurl, headers=headers)
+            # Reuse the successful response from the retry loop (avoid a second unguarded request)
             strapiseriekeywords = response.text
             jsonseriekeywords = response.json()
             lngseriekeywordsstatuscode = 0
@@ -3281,7 +3292,8 @@ def f_tmdblisttosql(lnglistid):
                     #arrlistcouples["CRAWLER_VERSION"] = 1
                     #arrlistcouples["API_RESULT"] = strapilistfordb
                     arrlistcouples["DESCRIPTION"] = strlistdesc
-                    arrlistcouples["POSTER_PATH"] = strlistposterpath
+                    if strlistposterpath is not None and strlistposterpath != "":
+                        arrlistcouples["POSTER_PATH"] = strlistposterpath
                     if strlistname != "":
                         arrlistcouples["NAME"] = strlistname
                     if strcreatedby != "":
@@ -3335,6 +3347,47 @@ def f_tmdblisttosql(lnglistid):
             cursor2 = connectioncp.cursor()
             cursor2.execute(strsqldelete)
             connectioncp.commit()
+        try:
+            print(f"DEBUG: list-poster: start (ID_LIST={lnglistid})")
+            if 'strlistposterpath' in locals():
+                print(f"DEBUG: list-poster: strlistposterpath exists (value={strlistposterpath!r})")
+                cursor2 = connectioncp.cursor()
+                cursor2.execute(f"SELECT POSTER_PATH FROM T_WC_TMDB_LIST WHERE ID_LIST = {lnglistid}")
+                row = cursor2.fetchone()
+                db_poster = None
+                if row is not None and 'POSTER_PATH' in row:
+                    db_poster = row['POSTER_PATH']
+                print(f"DEBUG: list-poster: db_poster={db_poster!r} (row_is_none={row is None})")
+                need_poster = (strlistposterpath is None or strlistposterpath == "") and (db_poster is None or db_poster == "")
+                print(f"DEBUG: list-poster: need_poster={need_poster}")
+                if need_poster:
+                    print("DEBUG: list-poster: selecting best movie poster by IMDb rating")
+                    strsql = ""
+                    strsql += "SELECT m.POSTER_PATH AS poster_path, r.averageRating AS rating "
+                    strsql += "FROM T_WC_TMDB_MOVIE m "
+                    strsql += "INNER JOIN T_WC_TMDB_MOVIE_LIST ml ON ml.ID_MOVIE = m.ID_MOVIE "
+                    strsql += "INNER JOIN T_WC_IMDB_MOVIE_RATING_IMPORT r ON r.tconst = m.ID_IMDB "
+                    strsql += f"WHERE ml.ID_LIST = {lnglistid} AND r.averageRating IS NOT NULL AND m.POSTER_PATH IS NOT NULL "
+                    strsql += "ORDER BY r.averageRating DESC "
+                    strsql += "LIMIT 1 "
+                    cursor2.execute(strsql)
+                    row = cursor2.fetchone()
+                    if row is not None and 'poster_path' in row and row['poster_path'] is not None and row['poster_path'] != "":
+                        print(f"DEBUG: list-poster: candidate poster found (poster_path={row['poster_path']!r})")
+                        arrlistcouples = {}
+                        arrlistcouples["POSTER_PATH"] = row['poster_path']
+                        strsqltablename = "T_WC_TMDB_LIST"
+                        strsqlupdatecondition = f"ID_LIST = {lnglistid}"
+                        cp.f_sqlupdatearray(strsqltablename, arrlistcouples, strsqlupdatecondition, 1)
+                        print("DEBUG: list-poster: poster updated in T_WC_TMDB_LIST")
+                    else:
+                        print(f"DEBUG: list-poster: no candidate poster found (row={row!r})")
+                else:
+                    print("DEBUG: list-poster: skipping (poster already present in TMDb payload or DB)")
+            else:
+                print("DEBUG: list-poster: skipping (strlistposterpath not defined in locals)")
+        except Exception as e:
+            print(f"Warning: failed to set list poster from highest IMDb-rated movie: {e}")
 
 def f_tmdblistsetcreditscompleted(lnglistid):
     """
