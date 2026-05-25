@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import csv
 import pandas as pd
 import re
-from SPARQLWrapper import SPARQLWrapper, SPARQLExceptions, JSON
+from SPARQLWrapper import SPARQLWrapper, SPARQLExceptions, JSON, POST
 
 # Load .env file 
 load_dotenv()
@@ -55,20 +55,10 @@ try:
                 strsparqlserieinstanceof = "Q5398426 Q1259759 Q117467246 Q63952888 Q15416"
                 cp.f_setservervariable("strsparqlaltcrawlerserieinstanceof",strsparqlserieinstanceof,"Instances of values for series used in Wikidata Sparql queries",0)
 
-            #arrwikidatascope = {100: 'property'}
-            #arrwikidatascope = {109: 'item'}
-            #arrwikidatascope = {100: 'property', 101: 'movie', 102: 'person', 103: 'serie', 104: 'movie properties', 105: 'person properties', 106: 'movie aliases', 109: 'item'}
-            #arrwikidatascope = {101: 'movie'}
-            #arrwikidatascope = {101: 'movie', 104: 'movie properties', 109: 'item'}
-            arrwikidatascope = {107: 'person aliases', 106: 'movie aliases', 104: 'movie properties', 105: 'person properties', 109: 'item add'}
-            #arrwikidatascope = {110: 'item fix INSTANCE_OF'}
-            #arrwikidatascope = {110: 'item fix INSTANCE_OF', 112: 'move item to person', 113: 'person refresh'}
-            #arrwikidatascope = {111: 'cleaning'}
-            arrwikidatascope = {115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 109: 'item add'}
-            arrwikidatascope = {109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties'}
-            if strnow <= "2026-03-20 00:00:00":
-                # The item add process is executed in priority until March 10, 2026 to quickly populate the T_WC_WIKIDATA_ITEM_V1 table and then be able to use this data in the other processes
-                arrwikidatascope = {112: 'move item to person', 109: 'item add'}
+            #arrwikidatascope = {107: 'person aliases', 106: 'movie aliases'}
+            arrwikidatascope = {100: 'property', 109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 116: 'season properties', 117: 'episode properties', 118: 't2s collection properties', 119: 't2s character properties', 120: 't2s award properties', 121: 't2s nomination properties', 122: 't2s topic properties', 123: 't2s technical properties', 124: 't2s group properties', 125: 't2s movement properties', 126: 't2s list properties', 127: 't2s death properties'}
+            #if strnow.startswith("2026-05-24"):
+            #    arrwikidatascope = {100: 'property', 116: 'season properties', 117: 'episode properties', 114: 'serie properties', 109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties'}
 
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
@@ -87,14 +77,17 @@ try:
                     cp.f_setservervariable("strsparqlcrawlerpropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
                     time.sleep(90)
                     # Define the SPARQL query
+                    # Explicit per-language OPTIONAL clauses pull EN + FR label/description in
+                    # one row each, replacing the single wikibase:label service that only
+                    # returned one language. Properties missing a translation simply leave
+                    # those vars unbound, so the OPTIONALs are required.
                     strsparqlquery = ""
-                    strsparqlquery += "SELECT ?property ?propertyLabel ?propertyDescription WHERE { "
+                    strsparqlquery += "SELECT ?property ?propertyLabel ?propertyDescription ?propertyLabelFr ?propertyDescriptionFr WHERE { "
                     strsparqlquery += "?property a wikibase:Property . "
-                    strsparqlquery += "SERVICE wikibase:label {  "
-                    strsparqlquery += "bd:serviceParam wikibase:language \"[AUTO_LANGUAGE],en\".  "
-                    strsparqlquery += "?property rdfs:label ?propertyLabel . "
-                    strsparqlquery += "?property schema:description ?propertyDescription . "
-                    strsparqlquery += "} "
+                    strsparqlquery += "OPTIONAL { ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"en\") } "
+                    strsparqlquery += "OPTIONAL { ?property schema:description ?propertyDescription FILTER(LANG(?propertyDescription) = \"en\") } "
+                    strsparqlquery += "OPTIONAL { ?property rdfs:label ?propertyLabelFr FILTER(LANG(?propertyLabelFr) = \"fr\") } "
+                    strsparqlquery += "OPTIONAL { ?property schema:description ?propertyDescriptionFr FILTER(LANG(?propertyDescriptionFr) = \"fr\") } "
                     strsparqlquery += "} "
                     strsparqlquery += "ORDER BY ?property "
                     # Initialize the SPARQL wrapper
@@ -103,6 +96,7 @@ try:
                     print(strsparqlquery)
                     sparql.setQuery(strsparqlquery)
                     sparql.setReturnFormat(JSON)
+                    sparql.setMethod(POST)
                     # Execute the query and convert the results
                     try:
                         query_result = sparql.query()
@@ -131,12 +125,29 @@ try:
                                     if row['propertyDescription.value']:
                                         if not pd.isna(row['propertyDescription.value']):
                                             strdescription = row['propertyDescription.value']
-                                strmessage = f"{strwikidataid} '{strlabel}' {strdescription}"
+                                # Compute strlabelfr
+                                strlabelfr = ""
+                                if 'propertyLabelFr.value' in row:
+                                    if row['propertyLabelFr.value']:
+                                        if not pd.isna(row['propertyLabelFr.value']):
+                                            strlabelfr = row['propertyLabelFr.value']
+                                            # reject any label that looks like a Wikidata ID
+                                            if re.match(r'^[QPL]\d+$', strlabelfr):
+                                                strlabelfr = ""
+                                # Compute strdescriptionfr
+                                strdescriptionfr = ""
+                                if 'propertyDescriptionFr.value' in row:
+                                    if row['propertyDescriptionFr.value']:
+                                        if not pd.isna(row['propertyDescriptionFr.value']):
+                                            strdescriptionfr = row['propertyDescriptionFr.value']
+                                strmessage = f"{strwikidataid} '{strlabel}' {strdescription} | FR '{strlabelfr}' {strdescriptionfr}"
                                 print(strmessage)
                                 arrmoviecouples = {}
                                 arrmoviecouples["ID_PROPERTY"] = strwikidataid
                                 arrmoviecouples["LABEL"] = strlabel
                                 arrmoviecouples["DESCRIPTION"] = strdescription
+                                arrmoviecouples["LABEL_FR"] = strlabelfr
+                                arrmoviecouples["DESCRIPTION_FR"] = strdescriptionfr
                                 strsqltablename = "T_WC_WIKIDATA_PROPERTY"
                                 strsqlupdatecondition = f"ID_PROPERTY = '{strwikidataid}'"
                                 cp.f_sqlupdatearray(strsqltablename,arrmoviecouples,strsqlupdatecondition,1)
@@ -197,7 +208,7 @@ try:
                     #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
                     #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 1000 "
+                    strsql += "LIMIT 10000 "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -206,10 +217,11 @@ try:
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
                         results = cursor.fetchall()
+                        # Print per-item context so logs still show what's being processed,
+                        # then group ids into 500-id batches and issue one POST per batch.
                         for row3 in results:
-                            # print("------------------------------------------")
-                            strwikidataid = row3['ID_WIKIDATA']
                             lngid = row3['ID_MOVIE']
+                            strwikidataid = row3['ID_WIKIDATA']
                             strmovietitle = row3['TITLE']
                             strmovieoriginaltitle = row3['ORIGINAL_TITLE']
                             datrelease = row3['DAT_RELEASE']
@@ -217,42 +229,58 @@ try:
                             if datrelease:
                                 stryearrelease = datrelease.strftime("%Y")
                             dblimdbrating = row3['averageRating']
-                            #cp.f_setservervariable("strsparqlcrawlercurrentvalue",str(lngid),"Current value in the current Wikidata SPARQL crawler",0)
-                            cp.f_setservervariable("strsparqlcrawlermoviepropertiescurrentvalue",str(dblimdbrating),"Current value in the current Wikidata SPARQL crawler",0)
-                            cp.f_setservervariable("strsparqlcrawlermoviepropertieswikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
                             strmessage = f"{lngid} {strmovietitle} ({stryearrelease})"
                             if strmovietitle != strmovieoriginaltitle:
                                 strmessage += f" AKA {strmovieoriginaltitle}"
                             strmessage += f" {dblimdbrating} {strwikidataid}"
                             print(strmessage)
+                        # Batch WDQS calls instead of one HTTP round-trip per movie:
+                        # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
+                        # cuts rate-limit pressure by ~lngbatchsize, and avoids the 1000s 429 back-off loop.
+                        # The ?p/?statement/?value claim expansion explodes per item, so keep
+                        # the batch small to stay under the WDQS 60s timeout.
+                        arrrowsall = list(results)
+                        lngbatchsize = 50
+                        for lngi in range(0, len(arrrowsall), lngbatchsize):
+                            arrrowsbatch = arrrowsall[lngi:lngi + lngbatchsize]
+                            arrbatch = [r['ID_WIKIDATA'] for r in arrrowsbatch]
+                            strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                            strbatchlabel = f"{arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)"
+                            cp.f_setservervariable("strsparqlcrawlermoviepropertiescurrentvalue",strbatchlabel,"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlermoviepropertieswikidataid",arrbatch[-1],"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
                             intencore = True
                             while intencore:
                                 time.sleep(5)
                                 # Define the SPARQL query
                                 strlang = "en"
                                 strsparqlquery = ""
-                                strsparqlquery += "SELECT ?property ?propertyLabel ?value ?valueLabel WHERE { "
-                                strsparqlquery += "  wd:" + strwikidataid + " ?p ?statement . "
+                                strsparqlquery += "SELECT ?item ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                strsparqlquery += "  ?item ?p ?statement . "
                                 strsparqlquery += "  ?statement ?ps ?value . "
                                 strsparqlquery += "  ?property wikibase:claim ?p . "
                                 strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
                                 strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
                                 strsparqlquery += "} "
-                                strsparqlquery += "ORDER BY ?property ?propertyLabel "
+                                strsparqlquery += "ORDER BY ?item ?property ?propertyLabel "
                                 # Initialize the SPARQL wrapper
                                 sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
                                 # Set the query and return format
                                 print(strsparqlquery)
                                 sparql.setQuery(strsparqlquery)
                                 sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
                                 # Execute the query and convert the results
                                 try:
                                     query_result = sparql.query()
-                                    results = query_result.convert()
+                                    results_sparql = query_result.convert()
                                     intencore = False
-                                    df = pd.json_normalize(results['results']['bindings'])
+                                    df = pd.json_normalize(results_sparql['results']['bindings'])
                                     if not df.empty:
                                         for index, row in df.iterrows():
+                                            stritem = row['item.value']
+                                            strwikidataid = stritem.split('/')[-1]
                                             strproperty = row['property.value']
                                             # Compute strpropertyid
                                             strpropertyid = ""
@@ -261,8 +289,8 @@ try:
                                             if 'value.value' in row:
                                                 if row['value.value']:
                                                     if not pd.isna(row['value.value']):
-                                                        stritem = row['value.value']
-                                                        stritemid = stritem.split('/')[-1]
+                                                        stritemvalue = row['value.value']
+                                                        stritemid = stritemvalue.split('/')[-1]
                                             arritemcouples = {}
                                             arritemcouples["ID_WIKIDATA"] = strwikidataid
                                             arritemcouples["ID_PROPERTY"] = strpropertyid
@@ -281,7 +309,10 @@ try:
                                     lngretryafter = 60
                                     print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                     time.sleep(lngretryafter)
-                            tf.f_tmdbmoviesetwikidatacompleted(lngid)
+                            # Mark every movie in the batch as completed — items with no
+                            # properties simply don't appear in the SPARQL result set.
+                            for row3 in arrrowsbatch:
+                                tf.f_tmdbmoviesetwikidatacompleted(row3['ID_MOVIE'])
                             
                 if intindex == 114:
                     # Wikidata serie properties data download
@@ -305,7 +336,7 @@ try:
                     #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
                     #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 1000 "
+                    strsql += "LIMIT 10000 "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -314,51 +345,65 @@ try:
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
                         results = cursor.fetchall()
+                        # Print per-item context so logs still show what's being processed,
+                        # then group ids into 500-id batches and issue one POST per batch.
                         for row3 in results:
-                            # print("------------------------------------------")
-                            strwikidataid = row3['ID_WIKIDATA']
                             lngid = row3['ID_SERIE']
-                            strserieoriginaltitle = row3['TITLE']
+                            strwikidataid = row3['ID_WIKIDATA']
                             strserieoriginaltitle = row3['ORIGINAL_TITLE']
                             strfirstairyear = row3['FIRST_AIR_YEAR']
                             strlastairyear = row3['LAST_AIR_YEAR']
                             dblimdbrating = row3['averageRating']
-                            #cp.f_setservervariable("strsparqlcrawlercurrentvalue",str(lngid),"Current value in the current Wikidata SPARQL crawler",0)
-                            cp.f_setservervariable("strsparqlcrawlerseriepropertiescurrentvalue",str(dblimdbrating),"Current value in the current Wikidata SPARQL crawler",0)
-                            cp.f_setservervariable("strsparqlcrawlerseriepropertieswikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
                             strmessage = f"{lngid} {strserieoriginaltitle} ({strfirstairyear}-{strlastairyear})"
-                            if strserieoriginaltitle != strserieoriginaltitle:
-                                strmessage += f" AKA {strserieoriginaltitle}"
                             strmessage += f" {dblimdbrating} {strwikidataid}"
                             print(strmessage)
+                        # Batch WDQS calls instead of one HTTP round-trip per serie:
+                        # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
+                        # cuts rate-limit pressure by ~lngbatchsize, and avoids the 1000s 429 back-off loop.
+                        # The ?p/?statement/?value claim expansion explodes per item, so keep
+                        # the batch small to stay under the WDQS 60s timeout.
+                        arrrowsall = list(results)
+                        lngbatchsize = 50
+                        for lngi in range(0, len(arrrowsall), lngbatchsize):
+                            arrrowsbatch = arrrowsall[lngi:lngi + lngbatchsize]
+                            arrbatch = [r['ID_WIKIDATA'] for r in arrrowsbatch]
+                            strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                            strbatchlabel = f"{arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)"
+                            cp.f_setservervariable("strsparqlcrawlerseriepropertiescurrentvalue",strbatchlabel,"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlerseriepropertieswikidataid",arrbatch[-1],"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
                             intencore = True
                             while intencore:
                                 time.sleep(5)
                                 # Define the SPARQL query
                                 strlang = "en"
                                 strsparqlquery = ""
-                                strsparqlquery += "SELECT ?property ?propertyLabel ?value ?valueLabel WHERE { "
-                                strsparqlquery += "  wd:" + strwikidataid + " ?p ?statement . "
+                                strsparqlquery += "SELECT ?item ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                strsparqlquery += "  ?item ?p ?statement . "
                                 strsparqlquery += "  ?statement ?ps ?value . "
                                 strsparqlquery += "  ?property wikibase:claim ?p . "
                                 strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
                                 strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
                                 strsparqlquery += "} "
-                                strsparqlquery += "ORDER BY ?property ?propertyLabel "
+                                strsparqlquery += "ORDER BY ?item ?property ?propertyLabel "
                                 # Initialize the SPARQL wrapper
                                 sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
                                 # Set the query and return format
                                 print(strsparqlquery)
                                 sparql.setQuery(strsparqlquery)
                                 sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
                                 # Execute the query and convert the results
                                 try:
                                     query_result = sparql.query()
-                                    results = query_result.convert()
+                                    results_sparql = query_result.convert()
                                     intencore = False
-                                    df = pd.json_normalize(results['results']['bindings'])
+                                    df = pd.json_normalize(results_sparql['results']['bindings'])
                                     if not df.empty:
                                         for index, row in df.iterrows():
+                                            stritem = row['item.value']
+                                            strwikidataid = stritem.split('/')[-1]
                                             strproperty = row['property.value']
                                             # Compute strpropertyid
                                             strpropertyid = ""
@@ -367,8 +412,8 @@ try:
                                             if 'value.value' in row:
                                                 if row['value.value']:
                                                     if not pd.isna(row['value.value']):
-                                                        stritem = row['value.value']
-                                                        stritemid = stritem.split('/')[-1]
+                                                        stritemvalue = row['value.value']
+                                                        stritemid = stritemvalue.split('/')[-1]
                                             arritemcouples = {}
                                             arritemcouples["ID_WIKIDATA"] = strwikidataid
                                             arritemcouples["ID_PROPERTY"] = strpropertyid
@@ -387,8 +432,236 @@ try:
                                     lngretryafter = 60
                                     print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                     time.sleep(lngretryafter)
-                            tf.f_tmdbseriesetwikidatacompleted(lngid)
-                            
+                            # Mark every serie in the batch as completed — items with no
+                            # properties simply don't appear in the SPARQL result set.
+                            for row3 in arrrowsbatch:
+                                tf.f_tmdbseriesetwikidatacompleted(row3['ID_SERIE'])
+
+                if intindex == 116:
+                    # Wikidata season properties data download
+                    cp.f_setservervariable("strsparqlcrawlerseasonpropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    strsql = ""
+                    strsql += "SELECT DISTINCT T_WC_TMDB_SEASON.ID_WIKIDATA, T_WC_TMDB_SEASON.TITLE, T_WC_TMDB_SEASON.SEASON_NUMBER, T_WC_TMDB_SEASON.AIR_YEAR, T_WC_TMDB_SEASON.ID_SEASON, T_WC_TMDB_SEASON.ID_SERIE, T_WC_TMDB_SEASON.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
+                    strsql += "FROM T_WC_TMDB_SEASON "
+                    strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_SEASON.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
+                    strsql += "WHERE T_WC_TMDB_SEASON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_SEASON.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_SEASON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+                    strsql += "AND T_WC_TMDB_SEASON.ID_WIKIDATA LIKE 'Q%' "
+                    strsql += "AND (T_WC_TMDB_SEASON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SEASON.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
+                    strsql += "LIMIT 10000 "
+                    # strsql += "LIMIT 1 "
+                    if strsql != "":
+                        print(strsql)
+                        cursor.execute(strsql)
+                        lngrowcount = cursor.rowcount
+                        print(f"{lngrowcount} lines")
+                        results = cursor.fetchall()
+                        # Print per-item context so logs still show what's being processed,
+                        # then group ids into batches and issue one POST per batch.
+                        for row3 in results:
+                            lngid = row3['ID_SEASON']
+                            strwikidataid = row3['ID_WIKIDATA']
+                            strseasontitle = row3['TITLE']
+                            lngseasonnumber = row3['SEASON_NUMBER']
+                            stryear = row3['AIR_YEAR']
+                            dblimdbrating = row3['averageRating']
+                            strmessage = f"{lngid} S{lngseasonnumber} {strseasontitle} ({stryear})"
+                            strmessage += f" {dblimdbrating} {strwikidataid}"
+                            print(strmessage)
+                        # Batch WDQS calls instead of one HTTP round-trip per season:
+                        # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
+                        # cuts rate-limit pressure by ~lngbatchsize, and avoids the 1000s 429 back-off loop.
+                        # The ?p/?statement/?value claim expansion explodes per item, so keep
+                        # the batch small to stay under the WDQS 60s timeout.
+                        arrrowsall = list(results)
+                        lngbatchsize = 50
+                        for lngi in range(0, len(arrrowsall), lngbatchsize):
+                            arrrowsbatch = arrrowsall[lngi:lngi + lngbatchsize]
+                            arrbatch = [r['ID_WIKIDATA'] for r in arrrowsbatch]
+                            strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                            strbatchlabel = f"{arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)"
+                            cp.f_setservervariable("strsparqlcrawlerseasonpropertiescurrentvalue",strbatchlabel,"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlerseasonpropertieswikidataid",arrbatch[-1],"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
+                            intencore = True
+                            while intencore:
+                                time.sleep(5)
+                                # Define the SPARQL query
+                                strlang = "en"
+                                strsparqlquery = ""
+                                strsparqlquery += "SELECT ?item ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                strsparqlquery += "  ?item ?p ?statement . "
+                                strsparqlquery += "  ?statement ?ps ?value . "
+                                strsparqlquery += "  ?property wikibase:claim ?p . "
+                                strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "} "
+                                strsparqlquery += "ORDER BY ?item ?property ?propertyLabel "
+                                # Initialize the SPARQL wrapper
+                                sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
+                                # Set the query and return format
+                                print(strsparqlquery)
+                                sparql.setQuery(strsparqlquery)
+                                sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
+                                # Execute the query and convert the results
+                                try:
+                                    query_result = sparql.query()
+                                    results_sparql = query_result.convert()
+                                    intencore = False
+                                    df = pd.json_normalize(results_sparql['results']['bindings'])
+                                    if not df.empty:
+                                        for index, row in df.iterrows():
+                                            stritem = row['item.value']
+                                            strwikidataid = stritem.split('/')[-1]
+                                            strproperty = row['property.value']
+                                            # Compute strpropertyid
+                                            strpropertyid = ""
+                                            strpropertyid = strproperty.split('/')[-1]
+                                            stritemid = ""
+                                            if 'value.value' in row:
+                                                if row['value.value']:
+                                                    if not pd.isna(row['value.value']):
+                                                        stritemvalue = row['value.value']
+                                                        stritemid = stritemvalue.split('/')[-1]
+                                            arritemcouples = {}
+                                            arritemcouples["ID_WIKIDATA"] = strwikidataid
+                                            arritemcouples["ID_PROPERTY"] = strpropertyid
+                                            arritemcouples["ID_ITEM"] = stritemid
+                                            strsqltablename = "T_WC_WIKIDATA_ITEM_PROPERTY"
+                                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND ID_PROPERTY = '{strpropertyid}' AND ID_ITEM = '{stritemid}'"
+                                            cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
+                                except SPARQLExceptions.EndPointInternalError as e:
+                                    print(f"Internal Server Error: {e}")
+                                except SPARQLExceptions.QueryBadFormed as e:
+                                    print(f"Badly Formed Query: {e}")
+                                except SPARQLExceptions.EndPointNotFound as e:
+                                    print(f"Endpoint Not Found: {e}")
+                                except Exception as e:
+                                    print(f"An error occurred: {e}")
+                                    lngretryafter = 60
+                                    print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
+                                    time.sleep(lngretryafter)
+                            # Mark every season in the batch as completed — items with no
+                            # properties simply don't appear in the SPARQL result set.
+                            for row3 in arrrowsbatch:
+                                tf.f_tmdbseasonsetwikidatacompleted(row3['ID_SEASON'])
+
+                if intindex == 117:
+                    # Wikidata episode properties data download
+                    cp.f_setservervariable("strsparqlcrawlerepisodepropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    strsql = ""
+                    strsql += "SELECT DISTINCT T_WC_TMDB_EPISODE.ID_WIKIDATA, T_WC_TMDB_EPISODE.TITLE, T_WC_TMDB_EPISODE.SEASON_NUMBER, T_WC_TMDB_EPISODE.EPISODE_NUMBER, T_WC_TMDB_EPISODE.AIR_YEAR, T_WC_TMDB_EPISODE.ID_EPISODE, T_WC_TMDB_EPISODE.ID_SERIE, T_WC_TMDB_EPISODE.ID_SEASON, T_WC_TMDB_EPISODE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
+                    strsql += "FROM T_WC_TMDB_EPISODE "
+                    strsql += "LEFT JOIN T_WC_IMDB_MOVIE_RATING_IMPORT ON T_WC_TMDB_EPISODE.ID_IMDB = T_WC_IMDB_MOVIE_RATING_IMPORT.tconst "
+                    strsql += "WHERE T_WC_TMDB_EPISODE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_EPISODE.ID_WIKIDATA <> '' "
+                    strsql += "AND T_WC_TMDB_EPISODE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+                    strsql += "AND T_WC_TMDB_EPISODE.ID_WIKIDATA LIKE 'Q%' "
+                    strsql += "AND (T_WC_TMDB_EPISODE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_EPISODE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
+                    strsql += "LIMIT 20000 "
+                    # strsql += "LIMIT 1 "
+                    if strsql != "":
+                        print(strsql)
+                        cursor.execute(strsql)
+                        lngrowcount = cursor.rowcount
+                        print(f"{lngrowcount} lines")
+                        results = cursor.fetchall()
+                        # Print per-item context so logs still show what's being processed,
+                        # then group ids into batches and issue one POST per batch.
+                        for row3 in results:
+                            lngid = row3['ID_EPISODE']
+                            strwikidataid = row3['ID_WIKIDATA']
+                            strepisodetitle = row3['TITLE']
+                            lngseasonnumber = row3['SEASON_NUMBER']
+                            lngepisodenumber = row3['EPISODE_NUMBER']
+                            stryear = row3['AIR_YEAR']
+                            dblimdbrating = row3['averageRating']
+                            strmessage = f"{lngid} S{lngseasonnumber}E{lngepisodenumber} {strepisodetitle} ({stryear})"
+                            strmessage += f" {dblimdbrating} {strwikidataid}"
+                            print(strmessage)
+                        # Batch WDQS calls instead of one HTTP round-trip per episode:
+                        # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
+                        # cuts rate-limit pressure by ~lngbatchsize, and avoids the 1000s 429 back-off loop.
+                        # The ?p/?statement/?value claim expansion explodes per item, so keep
+                        # the batch small to stay under the WDQS 60s timeout.
+                        arrrowsall = list(results)
+                        lngbatchsize = 50
+                        for lngi in range(0, len(arrrowsall), lngbatchsize):
+                            arrrowsbatch = arrrowsall[lngi:lngi + lngbatchsize]
+                            arrbatch = [r['ID_WIKIDATA'] for r in arrrowsbatch]
+                            strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                            strbatchlabel = f"{arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)"
+                            cp.f_setservervariable("strsparqlcrawlerepisodepropertiescurrentvalue",strbatchlabel,"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlerepisodepropertieswikidataid",arrbatch[-1],"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
+                            intencore = True
+                            while intencore:
+                                time.sleep(5)
+                                # Define the SPARQL query
+                                strlang = "en"
+                                strsparqlquery = ""
+                                strsparqlquery += "SELECT ?item ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                strsparqlquery += "  ?item ?p ?statement . "
+                                strsparqlquery += "  ?statement ?ps ?value . "
+                                strsparqlquery += "  ?property wikibase:claim ?p . "
+                                strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "} "
+                                strsparqlquery += "ORDER BY ?item ?property ?propertyLabel "
+                                # Initialize the SPARQL wrapper
+                                sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
+                                # Set the query and return format
+                                print(strsparqlquery)
+                                sparql.setQuery(strsparqlquery)
+                                sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
+                                # Execute the query and convert the results
+                                try:
+                                    query_result = sparql.query()
+                                    results_sparql = query_result.convert()
+                                    intencore = False
+                                    df = pd.json_normalize(results_sparql['results']['bindings'])
+                                    if not df.empty:
+                                        for index, row in df.iterrows():
+                                            stritem = row['item.value']
+                                            strwikidataid = stritem.split('/')[-1]
+                                            strproperty = row['property.value']
+                                            # Compute strpropertyid
+                                            strpropertyid = ""
+                                            strpropertyid = strproperty.split('/')[-1]
+                                            stritemid = ""
+                                            if 'value.value' in row:
+                                                if row['value.value']:
+                                                    if not pd.isna(row['value.value']):
+                                                        stritemvalue = row['value.value']
+                                                        stritemid = stritemvalue.split('/')[-1]
+                                            arritemcouples = {}
+                                            arritemcouples["ID_WIKIDATA"] = strwikidataid
+                                            arritemcouples["ID_PROPERTY"] = strpropertyid
+                                            arritemcouples["ID_ITEM"] = stritemid
+                                            strsqltablename = "T_WC_WIKIDATA_ITEM_PROPERTY"
+                                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND ID_PROPERTY = '{strpropertyid}' AND ID_ITEM = '{stritemid}'"
+                                            cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
+                                except SPARQLExceptions.EndPointInternalError as e:
+                                    print(f"Internal Server Error: {e}")
+                                except SPARQLExceptions.QueryBadFormed as e:
+                                    print(f"Badly Formed Query: {e}")
+                                except SPARQLExceptions.EndPointNotFound as e:
+                                    print(f"Endpoint Not Found: {e}")
+                                except Exception as e:
+                                    print(f"An error occurred: {e}")
+                                    lngretryafter = 60
+                                    print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
+                                    time.sleep(lngretryafter)
+                            # Mark every episode in the batch as completed — items with no
+                            # properties simply don't appear in the SPARQL result set.
+                            for row3 in arrrowsbatch:
+                                tf.f_tmdbepisodesetwikidatacompleted(row3['ID_EPISODE'])
+
                 if intindex == 105 or intindex == 115:
                     # Wikidata person properties data download
                     cp.f_setservervariable("strsparqlcrawlerpersonpropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
@@ -414,7 +687,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' "
                         strsql += "AND (T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
                         strsql += "ORDER BY T_WC_TMDB_PERSON.POPULARITY DESC "
-                        strsql += "LIMIT 2000 "
+                        strsql += "LIMIT 20000 "
                         # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -422,65 +695,79 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
                         results = cursor.fetchall()
+                        # Print per-item context so logs still show what's being processed,
+                        # then group ids into 500-id batches and issue one POST per batch.
                         for row3 in results:
-                            # print("------------------------------------------")
-                            strwikidataid = row3['ID_WIKIDATA']
                             lngid = row3['ID_PERSON']
+                            strwikidataid = row3['ID_WIKIDATA']
                             strpersonname = row3['NAME']
                             dblpersonpopularity = row3['POPULARITY']
-                            cp.f_setservervariable("strsparqlcrawlerpersonspropertiescurrentvalue",str(dblpersonpopularity),"Current value in the current Wikidata SPARQL crawler",0)
-                            cp.f_setservervariable("strsparqlcrawlerpersonspropertieswikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
                             strmessage = f"{lngid} {strpersonname}"
                             strmessage += f" {dblpersonpopularity} {strwikidataid}"
                             print(strmessage)
+                        # Batch WDQS calls instead of one HTTP round-trip per person:
+                        # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
+                        # cuts rate-limit pressure by ~lngbatchsize, and avoids the 1000s 429 back-off loop.
+                        # Persons carry the most claims of any item type (occupations, awards,
+                        # citizenships, dates), so keep the batch tighter than movies/series.
+                        arrrowsall = list(results)
+                        lngbatchsize = 25
+                        for lngi in range(0, len(arrrowsall), lngbatchsize):
+                            arrrowsbatch = arrrowsall[lngi:lngi + lngbatchsize]
+                            arrbatch = [r['ID_WIKIDATA'] for r in arrrowsbatch]
+                            strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                            strbatchlabel = f"{arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)"
+                            cp.f_setservervariable("strsparqlcrawlerpersonspropertiescurrentvalue",strbatchlabel,"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawlerpersonspropertieswikidataid",arrbatch[-1],"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
                             intencore = True
                             while intencore:
                                 time.sleep(5)
                                 # Define the SPARQL query
                                 strlang = "en"
                                 strsparqlquery = ""
-                                strsparqlquery += "SELECT ?property ?propertyLabel ?value ?valueLabel WHERE { "
-                                strsparqlquery += "  wd:" + strwikidataid + " ?p ?statement . "
+                                strsparqlquery += "SELECT ?item ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                strsparqlquery += "  ?item ?p ?statement . "
                                 strsparqlquery += "  ?statement ?ps ?value . "
                                 strsparqlquery += "  ?property wikibase:claim ?p . "
                                 strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
                                 strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
                                 strsparqlquery += "} "
-                                strsparqlquery += "ORDER BY ?property ?propertyLabel "
+                                strsparqlquery += "ORDER BY ?item ?property ?propertyLabel "
                                 # Initialize the SPARQL wrapper
                                 sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
                                 # Set the query and return format
                                 print(strsparqlquery)
                                 sparql.setQuery(strsparqlquery)
                                 sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
                                 # Execute the query and convert the results
                                 try:
                                     query_result = sparql.query()
-                                    results = query_result.convert()
+                                    results_sparql = query_result.convert()
                                     intencore = False
-                                    df = pd.json_normalize(results['results']['bindings'])
+                                    df = pd.json_normalize(results_sparql['results']['bindings'])
                                     if not df.empty:
                                         for index, row in df.iterrows():
+                                            stritem = row['item.value']
+                                            strwikidataid = stritem.split('/')[-1]
                                             strproperty = row['property.value']
-                                            #print("strproperty",strproperty)
                                             # Compute strpropertyid
                                             strpropertyid = ""
                                             strpropertyid = strproperty.split('/')[-1]
-                                            #print("strpropertyid",strpropertyid)
                                             stritemid = ""
                                             if 'value.value' in row:
                                                 if row['value.value']:
                                                     if not pd.isna(row['value.value']):
-                                                        stritem = row['value.value']
-                                                        stritemid = stritem.split('/')[-1]
-                                                        #print("stritemid",stritemid)
+                                                        stritemvalue = row['value.value']
+                                                        stritemid = stritemvalue.split('/')[-1]
                                             arritemcouples = {}
                                             arritemcouples["ID_WIKIDATA"] = strwikidataid
                                             arritemcouples["ID_PROPERTY"] = strpropertyid
                                             arritemcouples["ID_ITEM"] = stritemid
                                             strsqltablename = "T_WC_WIKIDATA_ITEM_PROPERTY"
                                             strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND ID_PROPERTY = '{strpropertyid}' AND ID_ITEM = '{stritemid}'"
-                                            #print("strsqlupdatecondition",strsqlupdatecondition)
                                             cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
                                 except SPARQLExceptions.EndPointInternalError as e:
                                     print(f"Internal Server Error: {e}")
@@ -493,7 +780,123 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                     lngretryafter = 60
                                     print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
                                     time.sleep(lngretryafter)
-                            tf.f_tmdbpersonsetwikidatacompleted(lngid)
+                            # Mark every person in the batch as completed — items with no
+                            # properties simply don't appear in the SPARQL result set.
+                            for row3 in arrrowsbatch:
+                                tf.f_tmdbpersonsetwikidatacompleted(row3['ID_PERSON'])
+                if intindex in (118, 119, 120, 121, 122, 123, 124, 125, 126, 127):
+                    # Wikidata T2S entity properties data download.
+                    # Same flow as scope 116 (season properties): per-batch VALUES ?item SPARQL
+                    # query, upsert into T_WC_WIKIDATA_ITEM_PROPERTY, then mark each parent's
+                    # TIM_WIKIDATA_COMPLETED. T2S tables are preferred over their TMDb
+                    # counterparts because the text2sql data-prep pipeline reliably populates
+                    # ID_WIKIDATA on the T2S side (see AGENTS.md scope-discovery rules).
+                    # The 10 scopes are parameterized via arrt2sscope rather than copy-pasted
+                    # 90-line blocks so changes to the SPARQL pattern stay in one place.
+                    arrt2sscope = {
+                        118: {'table': 'T_WC_T2S_COLLECTION', 'pk': 'ID_T2S_COLLECTION', 'label': 'COLLECTION_NAME', 'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2scollectionsetwikidatacompleted, 'svvar': 'collection'},
+                        119: {'table': 'T_WC_T2S_CHARACTER',  'pk': 'ID_CHARACTER',      'label': 'CAST_CHARACTER',  'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2scharactersetwikidatacompleted,  'svvar': 'character'},
+                        120: {'table': 'T_WC_T2S_AWARD',      'pk': 'ID_AWARD',          'label': 'AWARD_NAME',      'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2sawardsetwikidatacompleted,      'svvar': 'award'},
+                        121: {'table': 'T_WC_T2S_NOMINATION', 'pk': 'ID_NOMINATION',     'label': 'NOMINATION_NAME', 'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2snominationsetwikidatacompleted, 'svvar': 'nomination'},
+                        122: {'table': 'T_WC_T2S_TOPIC',      'pk': 'ID_TOPIC',          'label': 'TOPIC_NAME',      'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2stopicsetwikidatacompleted,      'svvar': 'topic'},
+                        123: {'table': 'T_WC_T2S_TECHNICAL',  'pk': 'ID_TECHNICAL',      'label': 'DESCRIPTION',     'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2stechnicalsetwikidatacompleted,  'svvar': 'technical'},
+                        124: {'table': 'T_WC_T2S_GROUP',      'pk': 'ID_GROUP',          'label': 'GROUP_NAME',      'order': 'POPULARITY',           'helper': tf.f_t2sgroupsetwikidatacompleted,      'svvar': 'group'},
+                        125: {'table': 'T_WC_T2S_MOVEMENT',   'pk': 'ID_MOVEMENT',       'label': 'MOVEMENT_NAME',   'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2smovementsetwikidatacompleted,   'svvar': 'movement'},
+                        126: {'table': 'T_WC_T2S_LIST',       'pk': 'ID_T2S_LIST',       'label': 'LIST_NAME',       'order': 'IMDB_RATING_WEIGHTED', 'helper': tf.f_t2slistsetwikidatacompleted,       'svvar': 'list'},
+                        127: {'table': 'T_WC_T2S_DEATH',      'pk': 'ID_DEATH',          'label': 'DEATH_NAME',      'order': 'POPULARITY',           'helper': tf.f_t2sdeathsetwikidatacompleted,      'svvar': 'death'},
+                    }
+                    cfg = arrt2sscope[intindex]
+                    strsvbase = f"strsparqlcrawlert2s{cfg['svvar']}properties"
+                    cp.f_setservervariable(f"{strsvbase}currentprocess", strcurrentprocess, "Current process in the Wikidata SPARQL crawler", 0)
+                    # Backtick the table name because T_WC_T2S_GROUP collides with the MySQL
+                    # reserved word GROUP; uniform backticking keeps the SQL identical across scopes.
+                    strsql = ""
+                    strsql += f"SELECT DISTINCT `{cfg['table']}`.{cfg['pk']} AS PK, `{cfg['table']}`.ID_WIKIDATA, `{cfg['table']}`.{cfg['label']} AS LABEL "
+                    strsql += f"FROM `{cfg['table']}` "
+                    strsql += f"WHERE `{cfg['table']}`.ID_WIKIDATA IS NOT NULL AND `{cfg['table']}`.ID_WIKIDATA <> '' "
+                    strsql += f"AND `{cfg['table']}`.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+                    strsql += f"AND `{cfg['table']}`.ID_WIKIDATA LIKE 'Q%' "
+                    strsql += f"AND (`{cfg['table']}`.TIM_WIKIDATA_COMPLETED IS NULL OR `{cfg['table']}`.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += f"ORDER BY `{cfg['table']}`.{cfg['order']} DESC "
+                    strsql += "LIMIT 10000 "
+                    if strsql != "":
+                        print(strsql)
+                        cursor.execute(strsql)
+                        lngrowcount = cursor.rowcount
+                        print(f"{lngrowcount} lines")
+                        results = cursor.fetchall()
+                        for row3 in results:
+                            print(f"{row3['PK']} {row3['LABEL']} {row3['ID_WIKIDATA']}")
+                        # Batch WDQS calls instead of one HTTP round-trip per item: a single
+                        # VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once.
+                        arrrowsall = list(results)
+                        lngbatchsize = 50
+                        for lngi in range(0, len(arrrowsall), lngbatchsize):
+                            arrrowsbatch = arrrowsall[lngi:lngi + lngbatchsize]
+                            arrbatch = [r['ID_WIKIDATA'] for r in arrrowsbatch]
+                            strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                            strbatchlabel = f"{arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)"
+                            cp.f_setservervariable(f"{strsvbase}currentvalue", strbatchlabel, "Current value in the current Wikidata SPARQL crawler", 0)
+                            cp.f_setservervariable(f"{strsvbase}wikidataid", arrbatch[-1], "Current Wikidata ID in the current Wikidata SPARQL crawler", 0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
+                            intencore = True
+                            while intencore:
+                                time.sleep(5)
+                                strlang = "en"
+                                strsparqlquery = ""
+                                strsparqlquery += "SELECT ?item ?property ?propertyLabel ?value ?valueLabel WHERE { "
+                                strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                strsparqlquery += "  ?item ?p ?statement . "
+                                strsparqlquery += "  ?statement ?ps ?value . "
+                                strsparqlquery += "  ?property wikibase:claim ?p . "
+                                strsparqlquery += "  ?property rdfs:label ?propertyLabel FILTER(LANG(?propertyLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "  ?value rdfs:label ?valueLabel FILTER(LANG(?valueLabel) = \"" + strlang + "\") . "
+                                strsparqlquery += "} "
+                                strsparqlquery += "ORDER BY ?item ?property ?propertyLabel "
+                                sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
+                                print(strsparqlquery)
+                                sparql.setQuery(strsparqlquery)
+                                sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
+                                try:
+                                    query_result = sparql.query()
+                                    results_sparql = query_result.convert()
+                                    intencore = False
+                                    df = pd.json_normalize(results_sparql['results']['bindings'])
+                                    if not df.empty:
+                                        for index, row in df.iterrows():
+                                            stritem = row['item.value']
+                                            strwikidataid = stritem.split('/')[-1]
+                                            strproperty = row['property.value']
+                                            strpropertyid = strproperty.split('/')[-1]
+                                            stritemid = ""
+                                            if 'value.value' in row:
+                                                if row['value.value']:
+                                                    if not pd.isna(row['value.value']):
+                                                        stritemvalue = row['value.value']
+                                                        stritemid = stritemvalue.split('/')[-1]
+                                            arritemcouples = {}
+                                            arritemcouples["ID_WIKIDATA"] = strwikidataid
+                                            arritemcouples["ID_PROPERTY"] = strpropertyid
+                                            arritemcouples["ID_ITEM"] = stritemid
+                                            strsqltablename = "T_WC_WIKIDATA_ITEM_PROPERTY"
+                                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND ID_PROPERTY = '{strpropertyid}' AND ID_ITEM = '{stritemid}'"
+                                            cp.f_sqlupdatearray(strsqltablename, arritemcouples, strsqlupdatecondition, 1)
+                                except SPARQLExceptions.EndPointInternalError as e:
+                                    print(f"Internal Server Error: {e}")
+                                except SPARQLExceptions.QueryBadFormed as e:
+                                    print(f"Badly Formed Query: {e}")
+                                except SPARQLExceptions.EndPointNotFound as e:
+                                    print(f"Endpoint Not Found: {e}")
+                                except Exception as e:
+                                    print(f"An error occurred: {e}")
+                                    lngretryafter = 60
+                                    print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
+                                    time.sleep(lngretryafter)
+                            # Mark every row in the batch as completed — items with no
+                            # properties simply don't appear in the SPARQL result set.
+                            for row3 in arrrowsbatch:
+                                cfg['helper'](row3['PK'])
                 if intindex == 106:
                     # Wikidata movie aliases data download
                     cp.f_setservervariable("strsparqlcrawlermoviealiasescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
@@ -555,6 +958,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                 print(strsparqlquery)
                                 sparql.setQuery(strsparqlquery)
                                 sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
                                 # Execute the query and convert the results
                                 try:
                                     query_result = sparql.query()
@@ -599,7 +1003,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "AND T_WC_WIKIDATA_PERSON_V1.ALIASES IS NULL "
                     #strsql += "AND T_WC_TMDB_PERSON.ID_PERSON = 3829 "
                     strsql += "ORDER BY T_WC_TMDB_PERSON.POPULARITY DESC "
-                    strsql += "LIMIT 1000 "
+                    strsql += "LIMIT 10000 "
                     #strsql += "LIMIT 5 "
                     if strsql != "":
                         print(strsql)
@@ -633,6 +1037,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                 print(strsparqlquery)
                                 sparql.setQuery(strsparqlquery)
                                 sparql.setReturnFormat(JSON)
+                                sparql.setMethod(POST)
                                 # Execute the query and convert the results
                                 try:
                                     query_result = sparql.query()
@@ -688,96 +1093,142 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
                         results = cursor.fetchall()
-                        for row3 in results:
-                            strwikidataid = row3['ID_ITEM']
-                            cp.f_setservervariable("strsparqlcrawleritemscurrentvalue",strwikidataid,"Current value in the current Wikidata SPARQL crawler",0)
-                            cp.f_setservervariable("strsparqlcrawleritemswikidataid",strwikidataid,"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
-                            #print(f"{strdesc} id: {strwikidataid}")
+                        # Batch WDQS calls instead of one HTTP round-trip per id:
+                        # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
+                        # cuts rate-limit pressure by ~lngbatchsize, and avoids the 1000s 429 back-off loop.
+                        arritemidsall = [row3['ID_ITEM'] for row3 in results]
+                        # Outer slice (lngbatchsize) is kept at 500 so the cursor variable
+                        # strsparqlcrawleritemswikidataid advances in 500-id chunks (matches
+                        # rows_to_process accounting and resume semantics). The actual SPARQL
+                        # POST is sub-batched per language: the EN pass cycles ~50 fallback
+                        # languages in the wikibase:label service so it has to stay smaller;
+                        # FR only walks ~10 fallback languages and can absorb the full slice.
+                        lngbatchsize = 500
+                        arrlangbatchsize = {1: 200, 2: 500}
+                        for lngi in range(0, len(arritemidsall), lngbatchsize):
+                            arrouterbatch = arritemidsall[lngi:lngi + lngbatchsize]
+                            strbatchlabel = f"{arrouterbatch[0]}..{arrouterbatch[-1]} ({len(arrouterbatch)} ids)"
+                            cp.f_setservervariable("strsparqlcrawleritemscurrentvalue",strbatchlabel,"Current value in the current Wikidata SPARQL crawler",0)
+                            cp.f_setservervariable("strsparqlcrawleritemswikidataid",arrouterbatch[-1],"Current Wikidata ID in the current Wikidata SPARQL crawler",0)
+                            print(f"batch {lngi // lngbatchsize + 1}: {strbatchlabel}")
                             arrlang = {1: 'en', 2: 'fr'}
                             for intlang, strlang in arrlang.items():
                                 if strlang == "en":
                                     strlangfull = "en,de,es,it,pt,ru,zh,ja,fr,nl,sv,pl,fi,cs,hu,da,ro,ko,ar,he,el,vi,th,uk,ca,eo,gl,la,li,lt,ms,nn,oc,or,ps,qu,sa,sc,sr,sw,tg,tk,tl,tt,ug,ve,wuu,xh,yor,zul"
                                 elif strlang == "fr":
                                     strlangfull = "fr,en,de,es,it,pt,ru,zh,ja"
-                                intencore = True
-                                while intencore:
-                                    time.sleep(5)
-                                    # Define the SPARQL query
-                                    strsparqlquery = ""
-                                    strsparqlquery += "SELECT ?item ?itemLabel ?itemDescription ?itemAlias ?instanceOf WHERE { "
-                                    strsparqlquery += "VALUES ?item { wd:" + strwikidataid + " } "
-                                    strsparqlquery += "OPTIONAL { ?item wdt:P31 ?instanceOf } "
-                                    strsparqlquery += "SERVICE wikibase:label {  "
-                                    strsparqlquery += "bd:serviceParam wikibase:language \"" + strlangfull + "\". "
-                                    strsparqlquery += "} "
-                                    strsparqlquery += "OPTIONAL { ?item skos:altLabel ?itemAlias. FILTER (LANG(?itemAlias) = \"" + strlang + "\") } "
-                                    strsparqlquery += "} "
-                                    # Initialize the SPARQL wrapper
-                                    sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
-                                    # Set the query and return format
-                                    print(strsparqlquery)
-                                    sparql.setQuery(strsparqlquery)
-                                    sparql.setReturnFormat(JSON)
-                                    # Execute the query and convert the results
-                                    try:
-                                        query_result = sparql.query()
-                                        results = query_result.convert()
-                                        intencore = False
-                                        df = pd.json_normalize(results['results']['bindings'])
-                                        if not df.empty:
-                                            strlabel = ""
-                                            strdescription = ""
-                                            straliases = ""
-                                            strinstanceof = ""
-                                            strinstanceofid = ""
-                                            for index, row in df.iterrows():
-                                                if strlabel == "":
-                                                    if 'itemLabel.value' in row:
-                                                        if row['itemLabel.value']:
-                                                            if not pd.isna(row['itemLabel.value']):
-                                                                strlabel = row['itemLabel.value']
-                                                                # reject any label that looks like a Wikidata ID
-                                                                if re.match(r'^[QPL]\d+$', strlabel):
-                                                                    strlabel = ""
-                                                if strdescription == "":
-                                                    if 'itemDescription.value' in row:
-                                                        if row['itemDescription.value']:
-                                                            if not pd.isna(row['itemDescription.value']):
-                                                                strdescription = row['itemDescription.value']
-                                                if 'itemAlias.value' in row:
-                                                    if row['itemAlias.value']:
-                                                        if not pd.isna(row['itemAlias.value']):
-                                                            stralias = row['itemAlias.value']
-                                                            if stralias != "":
-                                                                if straliases == "":
-                                                                    straliases = "|"
-                                                                straliases += stralias + "|"
-                                                if 'instanceOf.value' in row:
-                                                    if row['instanceOf.value']:
-                                                        if not pd.isna(row['instanceOf.value']):
-                                                            strinstanceof = row['instanceOf.value']
-                                                            strinstanceofid = strinstanceof.split('/')[-1]
-                                            arritemcouples = {}
-                                            arritemcouples["ID_WIKIDATA"] = strwikidataid
-                                            arritemcouples["LANG"] = strlang
-                                            arritemcouples["LABEL"] = strlabel
-                                            arritemcouples["DESCRIPTION"] = strdescription
-                                            arritemcouples["ALIASES"] = straliases
-                                            arritemcouples["INSTANCE_OF"] = strinstanceofid
-                                            strsqltablename = "T_WC_WIKIDATA_ITEM_V1"
-                                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataid}' AND LANG = '{strlang}'"
-                                            cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
-                                    except SPARQLExceptions.EndPointInternalError as e:
-                                        print(f"Internal Server Error: {e}")
-                                    except SPARQLExceptions.QueryBadFormed as e:
-                                        print(f"Badly Formed Query: {e}")
-                                    except SPARQLExceptions.EndPointNotFound as e:
-                                        print(f"Endpoint Not Found: {e}")
-                                    except Exception as e:
-                                        print(f"An error occurred: {e}")
-                                        lngretryafter = 60
-                                        print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
-                                        time.sleep(lngretryafter)
+                                lngsubbatchsize = arrlangbatchsize[intlang]
+                                for lngj in range(0, len(arrouterbatch), lngsubbatchsize):
+                                    arrbatch = arrouterbatch[lngj:lngj + lngsubbatchsize]
+                                    strbatchidswd = " ".join([f"wd:{x}" for x in arrbatch])
+                                    print(f"  {strlang} sub-batch {lngj // lngsubbatchsize + 1}: {arrbatch[0]}..{arrbatch[-1]} ({len(arrbatch)} ids)")
+                                    intencore = True
+                                    while intencore:
+                                        time.sleep(5)
+                                        # Define the SPARQL query
+                                        strsparqlquery = ""
+                                        strsparqlquery += "SELECT ?item ?itemLabel ?itemDescription ?itemAlias ?instanceOf WHERE { "
+                                        strsparqlquery += "VALUES ?item { " + strbatchidswd + " } "
+                                        strsparqlquery += "OPTIONAL { ?item wdt:P31 ?instanceOf } "
+                                        strsparqlquery += "SERVICE wikibase:label {  "
+                                        strsparqlquery += "bd:serviceParam wikibase:language \"" + strlangfull + "\". "
+                                        strsparqlquery += "} "
+                                        strsparqlquery += "OPTIONAL { ?item skos:altLabel ?itemAlias. FILTER (LANG(?itemAlias) = \"" + strlang + "\") } "
+                                        strsparqlquery += "} "
+                                        # ORDER BY ?item keeps rows for the same item adjacent so the prev-id stream works
+                                        strsparqlquery += "ORDER BY ?item "
+                                        # Initialize the SPARQL wrapper
+                                        sparql = SPARQLWrapper("https://query.wikidata.org/sparql", agent=strwikidatauseragent)
+                                        # Set the query and return format
+                                        print(strsparqlquery)
+                                        sparql.setQuery(strsparqlquery)
+                                        sparql.setReturnFormat(JSON)
+                                        sparql.setMethod(POST)
+                                        # Execute the query and convert the results
+                                        try:
+                                            query_result = sparql.query()
+                                            results = query_result.convert()
+                                            intencore = False
+                                            df = pd.json_normalize(results['results']['bindings'])
+                                            if not df.empty:
+                                                # Stream rows grouped by ?item: flush each accumulated item
+                                                # on transition, then flush the last one after the loop
+                                                strwikidataidprev = ""
+                                                strlabel = ""
+                                                strdescription = ""
+                                                straliases = ""
+                                                strinstanceof = ""
+                                                strinstanceofid = ""
+                                                for index, row in df.iterrows():
+                                                    stritem = row['item.value']
+                                                    strwikidataidcur = stritem.split('/')[-1]
+                                                    if strwikidataidcur != strwikidataidprev:
+                                                        if strwikidataidprev != "":
+                                                            arritemcouples = {}
+                                                            arritemcouples["ID_WIKIDATA"] = strwikidataidprev
+                                                            arritemcouples["LANG"] = strlang
+                                                            arritemcouples["LABEL"] = strlabel
+                                                            arritemcouples["DESCRIPTION"] = strdescription
+                                                            arritemcouples["ALIASES"] = straliases
+                                                            arritemcouples["INSTANCE_OF"] = strinstanceofid
+                                                            strsqltablename = "T_WC_WIKIDATA_ITEM_V1"
+                                                            strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataidprev}' AND LANG = '{strlang}'"
+                                                            cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
+                                                        strwikidataidprev = strwikidataidcur
+                                                        strlabel = ""
+                                                        strdescription = ""
+                                                        straliases = ""
+                                                        strinstanceof = ""
+                                                        strinstanceofid = ""
+                                                    if strlabel == "":
+                                                        if 'itemLabel.value' in row:
+                                                            if row['itemLabel.value']:
+                                                                if not pd.isna(row['itemLabel.value']):
+                                                                    strlabel = row['itemLabel.value']
+                                                                    # reject any label that looks like a Wikidata ID
+                                                                    if re.match(r'^[QPL]\d+$', strlabel):
+                                                                        strlabel = ""
+                                                    if strdescription == "":
+                                                        if 'itemDescription.value' in row:
+                                                            if row['itemDescription.value']:
+                                                                if not pd.isna(row['itemDescription.value']):
+                                                                    strdescription = row['itemDescription.value']
+                                                    if 'itemAlias.value' in row:
+                                                        if row['itemAlias.value']:
+                                                            if not pd.isna(row['itemAlias.value']):
+                                                                stralias = row['itemAlias.value']
+                                                                if stralias != "":
+                                                                    if straliases == "":
+                                                                        straliases = "|"
+                                                                    straliases += stralias + "|"
+                                                    if 'instanceOf.value' in row:
+                                                        if row['instanceOf.value']:
+                                                            if not pd.isna(row['instanceOf.value']):
+                                                                strinstanceof = row['instanceOf.value']
+                                                                strinstanceofid = strinstanceof.split('/')[-1]
+                                                # End of the loop for the current batch so we flush the last item
+                                                if strwikidataidprev != "":
+                                                    arritemcouples = {}
+                                                    arritemcouples["ID_WIKIDATA"] = strwikidataidprev
+                                                    arritemcouples["LANG"] = strlang
+                                                    arritemcouples["LABEL"] = strlabel
+                                                    arritemcouples["DESCRIPTION"] = strdescription
+                                                    arritemcouples["ALIASES"] = straliases
+                                                    arritemcouples["INSTANCE_OF"] = strinstanceofid
+                                                    strsqltablename = "T_WC_WIKIDATA_ITEM_V1"
+                                                    strsqlupdatecondition = f"ID_WIKIDATA = '{strwikidataidprev}' AND LANG = '{strlang}'"
+                                                    cp.f_sqlupdatearray(strsqltablename,arritemcouples,strsqlupdatecondition,1)
+                                        except SPARQLExceptions.EndPointInternalError as e:
+                                            print(f"Internal Server Error: {e}")
+                                        except SPARQLExceptions.QueryBadFormed as e:
+                                            print(f"Badly Formed Query: {e}")
+                                        except SPARQLExceptions.EndPointNotFound as e:
+                                            print(f"Endpoint Not Found: {e}")
+                                        except Exception as e:
+                                            print(f"An error occurred: {e}")
+                                            lngretryafter = 60
+                                            print(f"Rate limit exceeded. Retrying after {lngretryafter} seconds.")
+                                            time.sleep(lngretryafter)
                         if lngrowcount < rows_to_process:
                             # We finished crawling all items, we can reset the last Wikidata ID to process
                             cp.f_setservervariable("strsparqlcrawleritemswikidataid","", "Current Wikidata ID in the current Wikidata SPARQL crawler",0)
@@ -802,7 +1253,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                             strwikidataid = row3['ID_WIKIDATA']
                             strwikidataidall += " wd:" + strwikidataid
                             lngitemcount += 1
-                            if lngitemcount >= 100:
+                            if lngitemcount >= 500:
                                 print(strwikidataidall)
                                 intencore = True
                                 while intencore:
@@ -819,6 +1270,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                                     print(strsparqlquery)
                                     sparql.setQuery(strsparqlquery)
                                     sparql.setReturnFormat(JSON)
+                                    sparql.setMethod(POST)
                                     # Execute the query and convert the results
                                     try:
                                         query_result = sparql.query()
@@ -872,8 +1324,6 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "AND LANG = 'en' "
                     #strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1) "
                     strsql += "ORDER BY TIM_UPDATED ASC "
-                    #strsql += "LIMIT 1 "
-                    #strsql += "LIMIT 1000 "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
