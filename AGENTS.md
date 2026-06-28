@@ -13,6 +13,24 @@ Deeper specs live in their own files:
 
 ---
 
+## Related repositories (project ecosystem)
+
+`sparql-crawler` is one stage of **Agent BBB**, a multi-repository movie/TV database system owned by GitHub user `vaugouin`. All sibling repos live under `%USERPROFILE%/Code/<repo>` and at `github.com/vaugouin/<repo>`; they are interdependent stages of one pipeline that converges on a shared MySQL/MariaDB database (`T_WC_*` tables) and a ChromaDB vector store. The canonical roster of sibling repositories is kept in `doc/related-repositories/related-repositories.txt` in the `tmdb-front` repo.
+
+Pipeline stages:
+- **Infrastructure** — `python` (shared crawler base image), `chromadb` (vector service), `reverseproxy` (NGINX TLS ingress), `chromadb-security-test` (firewall validation).
+- **Acquisition** — `tmdb-crawler`, `imdb-crawler`, `sparql-crawler`, `sparql-movies-persons`, `wikidata-crawler`, `wikipedia-crawler`, `selenium-tmdb`, `download-images`, `sqlite-plex-to-tmdb`, `movieparadise`.
+- **Preprocessing → `T_WC_T2S_*`** — `tmdb-movie-preprocess`, `tmdb-person-preprocess`, `keywords-processing`.
+- **Semantic index & name resolution** — `embedding-update`, `embedding-query`, `rapidfuzz_query`.
+- **Serving** — `fastapi-text2sql` (NL→SQL API + MCP server), `voice-agent`, `tmdb-front` (PHP web front-end).
+- **Evaluation** — `eval-text2sql`, `extract-movie-questions`.
+- **Maintenance & tooling** — `plex-duplicates`, `subtitle-translate`, `powershell`, `playwright-test`.
+- **Monitoring & observability** — `data-monitoring`.
+
+**This repository's role:** Acquisition stage (Wikidata, V1 property model). Crawls Wikidata items already linked to TMDb records via SPARQL to fetch their properties, labels, descriptions, and aliases into the `T_WC_WIKIDATA_*` tables. It is complemented by `sparql-movies-persons` (which discovers the QID↔TMDb links) and superseded for bulk ingestion by the dump-based `wikidata-crawler` (V2). Output feeds `tmdb-movie-preprocess` and the Wikidata sections rendered by `tmdb-front`.
+
+---
+
 ## Where things live (file → role)
 
 Edit at the right layer; the architecture is intentionally split.
@@ -89,5 +107,11 @@ Keep Markdown, prompt files, JSON config, and logs UTF-8. These files contain no
 
 ---
 
-**Last Updated**: 2026-05-24
+## Build & deployment (Docker)
+
+Built and run as a Docker container via the repo's `Dockerfile` (base `python:3.10.5-slim-buster`). The image installs `requirements.txt`, copies the repo into `/app`, and runs the crawler as `CMD ["python", "./sparql-crawler.py"]` — a one-shot batch job, no exposed ports or volumes. Secrets stay out of the image: `.env` and `citizenphilsecrets.py` are excluded by `.dockerignore` and supplied at runtime (e.g. `docker run --env-file`).
+
+---
+
+**Last Updated**: 2026-06-03
 **Current Version**: 1.0.0 
