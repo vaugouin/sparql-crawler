@@ -40,40 +40,84 @@ try:
             cp.f_setservervariable("strsparqlcrawlertotalruntime",strtotalruntime,strtotalruntimedesc,0)
 
             # Retrieving instance of values for persons (humans) used in Wikidata Sparql queries
-            strsparqlpersoninstanceof = cp.f_getservervariable("strsparqlaltcrawlerpersoninstanceof",0)
+            strsparqlpersoninstanceof = cp.f_getservervariable("strsparqlcrawlerpersoninstanceof",0)
             if strsparqlpersoninstanceof == "":
                 strsparqlpersoninstanceof = "Q5"
-                cp.f_setservervariable("strsparqlaltcrawlerpersoninstanceof",strsparqlpersoninstanceof,"Instances of values for persons (humans) used in Wikidata Sparql queries",0)
+                cp.f_setservervariable("strsparqlcrawlerpersoninstanceof",strsparqlpersoninstanceof,"Instances of values for persons (humans) used in Wikidata Sparql queries",0)
             # Retrieving instance of values for movies used in Wikidata Sparql queries
-            strsparqlmovieinstanceof = cp.f_getservervariable("strsparqlaltcrawlermovieinstanceof",0)
+            strsparqlmovieinstanceof = cp.f_getservervariable("strsparqlcrawlermovieinstanceof",0)
             if strsparqlmovieinstanceof == "":
                 strsparqlmovieinstanceof = "Q11424 Q202866 Q226730 Q24862 Q20650540 Q506240 Q17517379"
-                cp.f_setservervariable("strsparqlaltcrawlermovieinstanceof",strsparqlmovieinstanceof,"Instances of values for movies used in Wikidata Sparql queries",0)
+                cp.f_setservervariable("strsparqlcrawlermovieinstanceof",strsparqlmovieinstanceof,"Instances of values for movies used in Wikidata Sparql queries",0)
             # Retrieving instance of values for series used in Wikidata Sparql queries
-            strsparqlserieinstanceof = cp.f_getservervariable("strsparqlaltcrawlerserieinstanceof",0)
+            strsparqlserieinstanceof = cp.f_getservervariable("strsparqlcrawlerserieinstanceof",0)
             if strsparqlserieinstanceof == "":
                 strsparqlserieinstanceof = "Q5398426 Q1259759 Q117467246 Q63952888 Q15416"
-                cp.f_setservervariable("strsparqlaltcrawlerserieinstanceof",strsparqlserieinstanceof,"Instances of values for series used in Wikidata Sparql queries",0)
+                cp.f_setservervariable("strsparqlcrawlerserieinstanceof",strsparqlserieinstanceof,"Instances of values for series used in Wikidata Sparql queries",0)
 
             #arrwikidatascope = {107: 'person aliases', 106: 'movie aliases'}
             arrwikidatascope = {100: 'property', 109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties', 114: 'serie properties', 116: 'season properties', 117: 'episode properties', 118: 't2s collection properties', 119: 't2s character properties', 120: 't2s award properties', 121: 't2s nomination properties', 122: 't2s topic properties', 123: 't2s technical properties', 124: 't2s group properties', 125: 't2s movement properties', 126: 't2s list properties', 127: 't2s death properties'}
             #if strnow.startswith("2026-05-24"):
             #    arrwikidatascope = {100: 'property', 116: 'season properties', 117: 'episode properties', 114: 'serie properties', 109: 'item add', 112: 'move item to person', 115: 'person properties VIP', 105: 'person properties', 104: 'movie properties'}
 
+            # Per-scope server-variable base name. Used by the end-of-iteration code
+            # to set <base>processedseconds (and matches the suffix convention used
+            # by the existing <base>processedcount writes inside each scope block).
+            # Pair (volume, seconds) — divide one by the other to size LIMIT per scope.
+            arrscopesvbasevar = {
+                100: 'strsparqlcrawlerproperties',
+                104: 'strsparqlcrawlermovieproperties',
+                105: 'strsparqlcrawlerpersonproperties',
+                106: 'strsparqlcrawlermoviealiases',
+                107: 'strsparqlcrawlerpersonaliases',
+                109: 'strsparqlcrawleritems',
+                110: 'strsparqlcrawleritemfixinstanceof',
+                111: 'strsparqlcrawleritemsdedup',
+                112: 'strsparqlcrawlermoveitemtoperson',
+                114: 'strsparqlcrawlerserieproperties',
+                115: 'strsparqlcrawlerpersonpropertiesvip',
+                116: 'strsparqlcrawlerseasonproperties',
+                117: 'strsparqlcrawlerepisodeproperties',
+                118: 'strsparqlcrawlert2scollectionproperties',
+                119: 'strsparqlcrawlert2scharacterproperties',
+                120: 'strsparqlcrawlert2sawardproperties',
+                121: 'strsparqlcrawlert2snominationproperties',
+                122: 'strsparqlcrawlert2stopicproperties',
+                123: 'strsparqlcrawlert2stechnicalproperties',
+                124: 'strsparqlcrawlert2sgroupproperties',
+                125: 'strsparqlcrawlert2smovementproperties',
+                126: 'strsparqlcrawlert2slistproperties',
+                127: 'strsparqlcrawlert2sdeathproperties',
+            }
+
             for intindex,strcontent in arrwikidatascope.items():
                 strcurrentprocess = f"{intindex}: processing Wikidata " + strcontent + " data using SPARQL"
                 strprocessesexecuted += str(intindex) + ", "
                 cp.f_setservervariable("strsparqlcrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
                 print(strcurrentprocess)
+                # Start the per-scope wall-clock timer; the matching end-of-iteration
+                # block below writes <base>processedseconds. Pair with <base>processedcount
+                # to compute records-per-second and tune the per-scope LIMIT.
+                lngscopestart = time.time()
                 datnow = datetime.now(cp.paris_tz)
+                delta15 = timedelta(days=15)
+                datjminus15 = datnow - delta15
+                strdatjminus15 = datjminus15.strftime("%Y-%m-%d")
                 delta30 = timedelta(days=30)
                 datjminus30 = datnow - delta30
                 strdatjminus30 = datjminus30.strftime("%Y-%m-%d")
                 delta100 = timedelta(days=100)
                 datjminus100 = datnow - delta100
                 strdatjminus100 = datjminus100.strftime("%Y-%m-%d")
+                strtimwikidatacompletedfreshness = strdatjminus15
                 if intindex == 100:
-                    # Wikidata properties data download
+                    # Wikidata properties data download — runs at most once per day
+                    # because the property list and labels/descriptions change slowly.
+                    strtoday = datnow.strftime("%Y-%m-%d")
+                    strlastrundate = cp.f_getservervariable("strsparqlcrawlerpropertieslastrundate",0)
+                    if strlastrundate == strtoday:
+                        print(f"Scope 100 already ran today ({strtoday}); skipping.")
+                        continue
                     cp.f_setservervariable("strsparqlcrawlerpropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
                     time.sleep(90)
                     # Define the SPARQL query
@@ -102,6 +146,11 @@ try:
                         query_result = sparql.query()
                         results = query_result.convert()
                         df = pd.json_normalize(results['results']['bindings'])
+                        # Scope 100 has no SQL SELECT to count from; use the SPARQL row count
+                        # (= number of Wikidata properties returned) as the equivalent metric.
+                        lngrowcount = len(df)
+                        print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlerpropertiesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler properties process (scope 100, SPARQL row count)",0)
                         if not df.empty:
                             for index, row in df.iterrows():
                                 stritem = row['property.value']
@@ -151,6 +200,7 @@ try:
                                 strsqltablename = "T_WC_WIKIDATA_PROPERTY"
                                 strsqlupdatecondition = f"ID_PROPERTY = '{strwikidataid}'"
                                 cp.f_sqlupdatearray(strsqltablename,arrmoviecouples,strsqlupdatecondition,1)
+                        cp.f_setservervariable("strsparqlcrawlerpropertieslastrundate",strtoday,"Date of the last successful run of the Wikidata SPARQL crawler properties process (scope 100)",0)
                     except SPARQLExceptions.EndPointInternalError as e:
                         print(f"Internal Server Error: {e}")
                     except SPARQLExceptions.QueryBadFormed as e:
@@ -189,6 +239,11 @@ try:
                 if intindex == 104:
                     # Wikidata movie properties data download
                     cp.f_setservervariable("strsparqlcrawlermoviepropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    strmoviepropertieslimit = cp.f_getservervariable("strsparqlcrawlermoviepropertieslimit",0)
+                    if strmoviepropertieslimit == "":
+                        strmoviepropertieslimit = "10000"
+                        cp.f_setservervariable("strsparqlcrawlermoviepropertieslimit",strmoviepropertieslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler movie properties (scope 104)",0)
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_WIKIDATA, T_WC_TMDB_MOVIE.TITLE, T_WC_TMDB_MOVIE.ORIGINAL_TITLE, T_WC_TMDB_MOVIE.DAT_RELEASE, T_WC_TMDB_MOVIE.ID_MOVIE, T_WC_TMDB_MOVIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_MOVIE "
@@ -197,7 +252,7 @@ try:
                     strsql += "WHERE T_WC_TMDB_MOVIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_MOVIE.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += "AND (T_WC_TMDB_MOVIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_MOVIE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += "AND (T_WC_TMDB_MOVIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_MOVIE.TIM_WIKIDATA_COMPLETED < '" + strtimwikidatacompletedfreshness + "') "
                     #strsql += "AND (T_WC_TMDB_MOVIE.ID_MOVIE IN ( "
                     #strsql += "SELECT ID_MOVIE FROM T_WC_TMDB_MOVIE_LIST WHERE ID_LIST IN ( "
                     #strsql += "SELECT ID_LIST FROM T_WC_TMDB_LIST WHERE DELETED = 0 AND USE_FOR_TAGGING >= 1 "
@@ -208,7 +263,7 @@ try:
                     #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
                     #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 10000 "
+                    strsql += f"LIMIT {strmoviepropertieslimit} "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -216,6 +271,7 @@ try:
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlermoviepropertiesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler movie properties process (scope 104)",0)
                         results = cursor.fetchall()
                         # Print per-item context so logs still show what's being processed,
                         # then group ids into 500-id batches and issue one POST per batch.
@@ -317,6 +373,11 @@ try:
                 if intindex == 114:
                     # Wikidata serie properties data download
                     cp.f_setservervariable("strsparqlcrawlerseriepropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    strseriepropertieslimit = cp.f_getservervariable("strsparqlcrawlerseriepropertieslimit",0)
+                    if strseriepropertieslimit == "":
+                        strseriepropertieslimit = "10000"
+                        cp.f_setservervariable("strsparqlcrawlerseriepropertieslimit",strseriepropertieslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler serie properties (scope 114)",0)
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_WIKIDATA, T_WC_TMDB_SERIE.TITLE, T_WC_TMDB_SERIE.ORIGINAL_TITLE, T_WC_TMDB_SERIE.FIRST_AIR_YEAR, T_WC_TMDB_SERIE.LAST_AIR_YEAR, T_WC_TMDB_SERIE.ID_SERIE, T_WC_TMDB_SERIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_SERIE "
@@ -325,7 +386,7 @@ try:
                     strsql += "WHERE T_WC_TMDB_SERIE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_SERIE.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_SERIE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_SERIE.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += "AND (T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += "AND (T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SERIE.TIM_WIKIDATA_COMPLETED < '" + strtimwikidatacompletedfreshness + "') "
                     #strsql += "AND (T_WC_TMDB_SERIE.ID_SERIE IN ( "
                     #strsql += "SELECT ID_SERIE FROM T_WC_TMDB_SERIE_LIST WHERE ID_LIST IN ( "
                     #strsql += "SELECT ID_LIST FROM T_WC_TMDB_LIST WHERE DELETED = 0 AND USE_FOR_TAGGING >= 1 "
@@ -336,7 +397,7 @@ try:
                     #strsql += "AND T_WC_TMDB_MOVIE.ID_WIKIDATA = 'Q1199628' "
                     #strsql += "ORDER BY T_WC_TMDB_MOVIE.ID_MOVIE "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 10000 "
+                    strsql += f"LIMIT {strseriepropertieslimit} "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
@@ -344,6 +405,7 @@ try:
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlerseriepropertiesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler serie properties process (scope 114)",0)
                         results = cursor.fetchall()
                         # Print per-item context so logs still show what's being processed,
                         # then group ids into 500-id batches and issue one POST per batch.
@@ -440,6 +502,11 @@ try:
                 if intindex == 116:
                     # Wikidata season properties data download
                     cp.f_setservervariable("strsparqlcrawlerseasonpropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    strseasonpropertieslimit = cp.f_getservervariable("strsparqlcrawlerseasonpropertieslimit",0)
+                    if strseasonpropertieslimit == "":
+                        strseasonpropertieslimit = "10000"
+                        cp.f_setservervariable("strsparqlcrawlerseasonpropertieslimit",strseasonpropertieslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler season properties (scope 116)",0)
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_SEASON.ID_WIKIDATA, T_WC_TMDB_SEASON.TITLE, T_WC_TMDB_SEASON.SEASON_NUMBER, T_WC_TMDB_SEASON.AIR_YEAR, T_WC_TMDB_SEASON.ID_SEASON, T_WC_TMDB_SEASON.ID_SERIE, T_WC_TMDB_SEASON.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_SEASON "
@@ -447,15 +514,16 @@ try:
                     strsql += "WHERE T_WC_TMDB_SEASON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_SEASON.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_SEASON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_SEASON.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += "AND (T_WC_TMDB_SEASON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SEASON.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += "AND (T_WC_TMDB_SEASON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_SEASON.TIM_WIKIDATA_COMPLETED < '" + strtimwikidatacompletedfreshness + "') "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 10000 "
+                    strsql += f"LIMIT {strseasonpropertieslimit} "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlerseasonpropertiesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler season properties process (scope 116)",0)
                         results = cursor.fetchall()
                         # Print per-item context so logs still show what's being processed,
                         # then group ids into batches and issue one POST per batch.
@@ -552,6 +620,11 @@ try:
                 if intindex == 117:
                     # Wikidata episode properties data download
                     cp.f_setservervariable("strsparqlcrawlerepisodepropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    strepisodepropertieslimit = cp.f_getservervariable("strsparqlcrawlerepisodepropertieslimit",0)
+                    if strepisodepropertieslimit == "":
+                        strepisodepropertieslimit = "20000"
+                        cp.f_setservervariable("strsparqlcrawlerepisodepropertieslimit",strepisodepropertieslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler episode properties (scope 117)",0)
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_EPISODE.ID_WIKIDATA, T_WC_TMDB_EPISODE.TITLE, T_WC_TMDB_EPISODE.SEASON_NUMBER, T_WC_TMDB_EPISODE.EPISODE_NUMBER, T_WC_TMDB_EPISODE.AIR_YEAR, T_WC_TMDB_EPISODE.ID_EPISODE, T_WC_TMDB_EPISODE.ID_SERIE, T_WC_TMDB_EPISODE.ID_SEASON, T_WC_TMDB_EPISODE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_EPISODE "
@@ -559,15 +632,16 @@ try:
                     strsql += "WHERE T_WC_TMDB_EPISODE.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_EPISODE.ID_WIKIDATA <> '' "
                     strsql += "AND T_WC_TMDB_EPISODE.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND T_WC_TMDB_EPISODE.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += "AND (T_WC_TMDB_EPISODE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_EPISODE.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += "AND (T_WC_TMDB_EPISODE.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_EPISODE.TIM_WIKIDATA_COMPLETED < '" + strtimwikidatacompletedfreshness + "') "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 20000 "
+                    strsql += f"LIMIT {strepisodepropertieslimit} "
                     # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlerepisodepropertiesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler episode properties process (scope 117)",0)
                         results = cursor.fetchall()
                         # Print per-item context so logs still show what's being processed,
                         # then group ids into batches and issue one POST per batch.
@@ -665,6 +739,13 @@ try:
                 if intindex == 105 or intindex == 115:
                     # Wikidata person properties data download
                     cp.f_setservervariable("strsparqlcrawlerpersonpropertiescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    # Only the non-VIP branch (scope 105) currently uses a LIMIT — VIP (scope 115)
+                    # walks every eligible person, so no variable is read on that branch.
+                    strpersonpropertieslimit = cp.f_getservervariable("strsparqlcrawlerpersonpropertieslimit",0)
+                    if strpersonpropertieslimit == "":
+                        strpersonpropertieslimit = "20000"
+                        cp.f_setservervariable("strsparqlcrawlerpersonpropertieslimit",strpersonpropertieslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler person properties (scope 105)",0)
                     if intindex == 115:
                         # Enable the following SQL query to update all persons with VIP status 
                         strsql = f"""SELECT DISTINCT T_WC_TMDB_PERSON.ID_WIKIDATA, T_WC_TMDB_PERSON.NAME, T_WC_TMDB_PERSON.ID_PERSON, T_WC_TMDB_PERSON.POPULARITY 
@@ -685,15 +766,21 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         strsql += "WHERE T_WC_TMDB_PERSON.ID_WIKIDATA IS NOT NULL AND T_WC_TMDB_PERSON.ID_WIKIDATA <> '' "
                         strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                         strsql += "AND T_WC_TMDB_PERSON.ID_WIKIDATA LIKE 'Q%' "
-                        strsql += "AND (T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                        strsql += "AND (T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED IS NULL OR T_WC_TMDB_PERSON.TIM_WIKIDATA_COMPLETED < '" + strtimwikidatacompletedfreshness + "') "
                         strsql += "ORDER BY T_WC_TMDB_PERSON.POPULARITY DESC "
-                        strsql += "LIMIT 20000 "
+                        strsql += f"LIMIT {strpersonpropertieslimit} "
                         # strsql += "LIMIT 1 "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        # Distinct counters for 105 (regular) vs 115 (VIP) so each scope's
+                        # actual record count is observable independently in dashboards.
+                        if intindex == 115:
+                            cp.f_setservervariable("strsparqlcrawlerpersonpropertiesvipprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler person properties VIP process (scope 115)",0)
+                        else:
+                            cp.f_setservervariable("strsparqlcrawlerpersonpropertiesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler person properties process (scope 105)",0)
                         results = cursor.fetchall()
                         # Print per-item context so logs still show what's being processed,
                         # then group ids into 500-id batches and issue one POST per batch.
@@ -808,6 +895,13 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     cfg = arrt2sscope[intindex]
                     strsvbase = f"strsparqlcrawlert2s{cfg['svvar']}properties"
                     cp.f_setservervariable(f"{strsvbase}currentprocess", strcurrentprocess, "Current process in the Wikidata SPARQL crawler", 0)
+                    # LIMIT applied to the SQL query, one configurable server variable per T2S scope
+                    # (collection, character, award, ...) so each scope can be tuned independently.
+                    strt2slimitvar = f"strsparqlcrawlert2s{cfg['svvar']}propertieslimit"
+                    strt2slimit = cp.f_getservervariable(strt2slimitvar,0)
+                    if strt2slimit == "":
+                        strt2slimit = "10000"
+                        cp.f_setservervariable(strt2slimitvar,strt2slimit,f"LIMIT applied to the SQL query for Wikidata SPARQL crawler t2s {cfg['svvar']} properties (scope {intindex})",0)
                     # Backtick the table name because T_WC_T2S_GROUP collides with the MySQL
                     # reserved word GROUP; uniform backticking keeps the SQL identical across scopes.
                     strsql = ""
@@ -816,14 +910,15 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += f"WHERE `{cfg['table']}`.ID_WIKIDATA IS NOT NULL AND `{cfg['table']}`.ID_WIKIDATA <> '' "
                     strsql += f"AND `{cfg['table']}`.ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += f"AND `{cfg['table']}`.ID_WIKIDATA LIKE 'Q%' "
-                    strsql += f"AND (`{cfg['table']}`.TIM_WIKIDATA_COMPLETED IS NULL OR `{cfg['table']}`.TIM_WIKIDATA_COMPLETED < '" + strdatjminus30 + "') "
+                    strsql += f"AND (`{cfg['table']}`.TIM_WIKIDATA_COMPLETED IS NULL OR `{cfg['table']}`.TIM_WIKIDATA_COMPLETED < '" + strtimwikidatacompletedfreshness + "') "
                     strsql += f"ORDER BY `{cfg['table']}`.{cfg['order']} DESC "
-                    strsql += "LIMIT 10000 "
+                    strsql += f"LIMIT {strt2slimit} "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable(f"{strsvbase}processedcount",str(lngrowcount),f"Number of records processed by the Wikidata SPARQL crawler t2s {cfg['svvar']} properties process (scope {intindex})",0)
                         results = cursor.fetchall()
                         for row3 in results:
                             print(f"{row3['PK']} {row3['LABEL']} {row3['ID_WIKIDATA']}")
@@ -900,6 +995,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                 if intindex == 106:
                     # Wikidata movie aliases data download
                     cp.f_setservervariable("strsparqlcrawlermoviealiasescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    strmoviealiaseslimit = cp.f_getservervariable("strsparqlcrawlermoviealiaseslimit",0)
+                    if strmoviealiaseslimit == "":
+                        strmoviealiaseslimit = "500"
+                        cp.f_setservervariable("strsparqlcrawlermoviealiaseslimit",strmoviealiaseslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler movie aliases (scope 106)",0)
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_WIKIDATA, T_WC_TMDB_MOVIE.TITLE, T_WC_TMDB_MOVIE.ORIGINAL_TITLE, T_WC_TMDB_MOVIE.DAT_RELEASE, T_WC_TMDB_MOVIE.ID_MOVIE, T_WC_TMDB_MOVIE.ID_IMDB, T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating "
                     strsql += "FROM T_WC_TMDB_MOVIE "
@@ -917,13 +1017,14 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     #strsql += "OR (T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION IS NOT NULL AND T_WC_WIKIDATA_MOVIE_V1.ID_CRITERION <> 0) "
                     #strsql += ") "
                     strsql += "ORDER BY T_WC_IMDB_MOVIE_RATING_IMPORT.averageRating DESC "
-                    strsql += "LIMIT 500 "
+                    strsql += f"LIMIT {strmoviealiaseslimit} "
                     #strsql += "LIMIT 5 "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlermoviealiasesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler movie aliases process (scope 106)",0)
                         results = cursor.fetchall()
                         for row3 in results:
                             # print("------------------------------------------")
@@ -993,6 +1094,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                 if intindex == 107:
                     # Wikidata person aliases data download
                     cp.f_setservervariable("strsparqlcrawlerpersonaliasescurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    strpersonaliaseslimit = cp.f_getservervariable("strsparqlcrawlerpersonaliaseslimit",0)
+                    if strpersonaliaseslimit == "":
+                        strpersonaliaseslimit = "10000"
+                        cp.f_setservervariable("strsparqlcrawlerpersonaliaseslimit",strpersonaliaseslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler person aliases (scope 107)",0)
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_WIKIDATA, T_WC_TMDB_PERSON.NAME, T_WC_TMDB_PERSON.ID_PERSON, T_WC_TMDB_PERSON.POPULARITY "
                     strsql += "FROM T_WC_TMDB_PERSON "
@@ -1003,13 +1109,14 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     strsql += "AND T_WC_WIKIDATA_PERSON_V1.ALIASES IS NULL "
                     #strsql += "AND T_WC_TMDB_PERSON.ID_PERSON = 3829 "
                     strsql += "ORDER BY T_WC_TMDB_PERSON.POPULARITY DESC "
-                    strsql += "LIMIT 10000 "
+                    strsql += f"LIMIT {strpersonaliaseslimit} "
                     #strsql += "LIMIT 5 "
                     if strsql != "":
                         print(strsql)
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlerpersonaliasesprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler person aliases process (scope 107)",0)
                         results = cursor.fetchall()
                         for row3 in results:
                             # print("------------------------------------------")
@@ -1073,7 +1180,14 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                     # Wikidata items data download, new (109)
                     cp.f_setservervariable("strsparqlcrawleritemscurrentprocess",strcurrentprocess,"Current process in the Wikidata SPARQL crawler",0)
                     strwikidataidold = cp.f_getservervariable("strsparqlcrawleritemswikidataid",0)
-                    rows_to_process = 5000
+                    # LIMIT applied to the SQL query, configurable per process via a server variable.
+                    # Drives both the LIMIT clause below and the end-of-cycle check that resets
+                    # strsparqlcrawleritemswikidataid when fewer rows come back than requested.
+                    stritemslimit = cp.f_getservervariable("strsparqlcrawleritemslimit",0)
+                    if stritemslimit == "":
+                        stritemslimit = "5000"
+                        cp.f_setservervariable("strsparqlcrawleritemslimit",stritemslimit,"LIMIT applied to the SQL query for Wikidata SPARQL crawler item add (scope 109)",0)
+                    rows_to_process = int(stritemslimit)
                     strsql = ""
                     strsql += "SELECT DISTINCT ID_ITEM "
                     strsql += "FROM T_WC_WIKIDATA_ITEM_PROPERTY "
@@ -1092,6 +1206,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawleritemsprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler item add process (scope 109)",0)
                         results = cursor.fetchall()
                         # Batch WDQS calls instead of one HTTP round-trip per id:
                         # a single VALUES ?item { wd:Q1 wd:Q2 ... } query returns many items at once,
@@ -1246,6 +1361,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawleritemfixinstanceofprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler item fix INSTANCE_OF process (scope 110)",0)
                         results = cursor.fetchall()
                         strwikidataidall = ""
                         lngitemcount = 0
@@ -1329,6 +1445,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawlermoveitemtopersonprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler move item to person process (scope 112)",0)
                         results = cursor.fetchall()
                         for row3 in results:
                             strwikidataid = row3['ID_WIKIDATA']
@@ -1391,6 +1508,7 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                         cursor.execute(strsql)
                         lngrowcount = cursor.rowcount
                         print(f"{lngrowcount} lines")
+                        cp.f_setservervariable("strsparqlcrawleritemsdedupprocessedcount",str(lngrowcount),"Number of records processed by the Wikidata SPARQL crawler item property dedup process (scope 111)",0)
                         strwikidataidprev = ""
                         strpropertyidprev = ""
                         stritemidprev = ""
@@ -1409,6 +1527,11 @@ ORDER BY T_WC_TMDB_PERSON.ID_PERSON ASC
                             strwikidataidprev = strwikidataid
                             strpropertyidprev = strpropertyid
                             stritemidprev = stritemid
+                # Wall-clock time spent in this scope (set even on internal failures so
+                # dashboards always have a value). Pair with <base>processedcount to tune LIMITs.
+                if intindex in arrscopesvbasevar:
+                    lngscopesec = int(time.time() - lngscopestart)
+                    cp.f_setservervariable(f"{arrscopesvbasevar[intindex]}processedseconds",str(lngscopesec),f"Time in seconds spent by the Wikidata SPARQL crawler (scope {intindex})",0)
                 #cp.f_setservervariable("strsparqlcrawlercurrentsql","","Current SQL query in the SPARQL Wikidata crawler",0)
                 cp.f_setservervariable("strsparqlcrawlercurrentvalue","","Current value in the current Wikidata SPARQL crawler",0)
                 cp.f_setservervariable("strsparqlcrawleritemscurrentprocess","","Current process in the Wikidata SPARQL crawler",0)
