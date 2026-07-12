@@ -28,7 +28,7 @@ An `if strnow.startswith("YYYY-MM-DD"):` override immediately below the default 
 
 | Scope | Label | Source table → Target table | What it does |
 |------:|-------|-----------------------------|--------------|
-| 100 | property | Wikidata properties → `T_WC_WIKIDATA_PROPERTY` | Pulls every Wikidata property (`?property a wikibase:Property`) with its `en` and `fr` label and description in a single POST query (explicit `OPTIONAL { … FILTER(LANG(…) = "xx") }` clauses), writing `LABEL` / `DESCRIPTION` / `LABEL_FR` / `DESCRIPTION_FR`. |
+| 100 | property | Wikidata properties → `T_WC_WIKIDATA_PROPERTY` | Pulls every Wikidata property (`?property a wikibase:Property`) with its `en` and `fr` label and description in a single POST query (explicit `OPTIONAL { … FILTER(LANG(…) = "xx") }` clauses), writing `LABEL` / `DESCRIPTION` / `LABEL_FR` / `DESCRIPTION_FR`. Runs at most once per Paris-day: the date of the last successful run is stored in `strsparqlcrawlerpropertieslastrundate` and the scope is skipped on subsequent runs the same day. |
 | 103 | serie | (legacy, currently a no-op stub) | Year-bucketed series crawl; loop is short-circuited by `intencore = False`. |
 | 104 | movie properties | `T_WC_TMDB_MOVIE` × `T_WC_IMDB_MOVIE_RATING_IMPORT` → `T_WC_WIKIDATA_ITEM_PROPERTY` | For up to 1000 TMDb movies (ranked by IMDb rating, refreshed > 30 days ago) downloads all `?property / ?value` pairs and marks the movie via `tf.f_tmdbmoviesetwikidatacompleted`. Batches Wikidata ids into POST queries of 50 with a `VALUES ?item { … }` clause. |
 | 105 | person properties | `T_WC_TMDB_PERSON` → `T_WC_WIKIDATA_ITEM_PROPERTY` | Same shape as 104. Pulls up to 2000 persons ranked by `POPULARITY`, refreshed > 30 days ago, and POSTs them to WDQS in batches of 25. Calls `tf.f_tmdbpersonsetwikidatacompleted`. |
@@ -70,24 +70,28 @@ The crawler reports progress by writing **server variables** through `cp.f_setse
 | `strsparqlcrawler{properties,movieproperties,serieproperties,seasonproperties,episodeproperties,personproperties,moviealiases,personaliases,items,itemfixinstanceof}currentprocess` | Human-readable label of the currently active scope. |
 | `strsparqlcrawlert2s{collection,character,award,nomination,topic,technical,group,movement,list,death}propertiescurrentprocess` | Currently active T2S scope (118–127). Each scope also writes `*currentvalue` (the current batch label, e.g. `Q123..Q456 (50 ids)`) and `*wikidataid` (the last ID in the batch). |
 | `strsparqlcrawler*wikidataid` / `strsparqlcrawler*currentvalue` | Latest Wikidata ID / ranking value being processed — these power external "current position" displays and let scope 109 resume from where it left off. |
+| `strsparqlcrawler*processedcount` | Records picked up by the per-scope SELECT (`cursor.rowcount`), or for the SPARQL-only scope 100 the number of result rows returned by WDQS (`len(df)`). Compare against the per-scope LIMIT to see whether the cap was hit and how many `TIM_WIKIDATA_COMPLETED`-eligible rows were available. Written by every scope (100, 104, 105, 106, 107, 109, 110, 111, 112, 114, 115, 116, 117, 118–127); distinct counters for 105 / 115 and for 112 — see the prefix index below. |
+| `strsparqlcrawler*processedseconds` | Wall-clock seconds spent in the scope's `if intindex == N:` block (from the start of the iteration through the end-of-iteration cleanup). Pair with `*processedcount` to compute records-per-second and size the per-scope LIMIT for the throughput you want. Written by every scope listed in `arrscopesvbasevar` — same prefix as `*processedcount`. |
 
 `citizenphil.f_getservervariable` / `f_setservervariable` are the canonical accessors; the same variables are surfaced by the wider Citizenphil dashboards.
 
 ### Server-variable prefix index
 
-Per-scope progress variables follow the pattern `<prefix>{currentprocess,currentvalue,wikidataid}` (not every scope writes all three — the legacy series stub only writes `currentprocess`/`currentvalue`, and the item-fix scope only writes `currentvalue`/`wikidataid`):
+Per-scope progress variables follow the pattern `<prefix>{currentprocess,currentvalue,wikidataid,processedcount,processedseconds}` (not every scope writes all five — the legacy series stub only writes `currentprocess`/`currentvalue`, and the item-fix scope only writes `currentvalue`/`wikidataid` for its progress trackers; scope 100 derives its `processedcount` from the SPARQL response since it has no SQL `SELECT`; `processedseconds` is written centrally via the `arrscopesvbasevar` mapping at the end of every iteration):
 
 | Scope | Prefix |
 |------:|--------|
 | 100 | `strsparqlcrawlerproperties` |
 | 103 (legacy) | `strsparqlcrawlerseries` |
 | 104 | `strsparqlcrawlermovieproperties` |
-| 105 / 115 | `strsparqlcrawlerpersonproperties` (note: a few sites write `strsparqlcrawlerpersonsproperties` with an extra `s` — both forms are in the wild) |
+| 105 | `strsparqlcrawlerpersonproperties` (note: a few sites write `strsparqlcrawlerpersonsproperties` with an extra `s` — both forms are in the wild) |
+| 115 | `strsparqlcrawlerpersonproperties` for current* / wikidataid, but `strsparqlcrawlerpersonpropertiesvip` for `processedcount` so the VIP run is countable on its own |
 | 106 | `strsparqlcrawlermoviealiases` |
 | 107 | `strsparqlcrawlerpersonaliases` |
-| 109 / 110 / 112 | `strsparqlcrawleritems` |
-| 110 | `strsparqlcrawleritemfixinstanceof` (also writes via the `items` prefix) |
+| 109 | `strsparqlcrawleritems` |
+| 110 | `strsparqlcrawleritems` for `currentprocess`, `strsparqlcrawleritemfixinstanceof` for `currentvalue` / `wikidataid` / `processedcount` |
 | 111 | `strsparqlcrawleritemsdedup` |
+| 112 | `strsparqlcrawleritems` for `currentprocess`, `strsparqlcrawleritemfixinstanceof` for `currentvalue` / `wikidataid`, `strsparqlcrawlermoveitemtoperson` for `processedcount` |
 | 114 | `strsparqlcrawlerserieproperties` |
 | 116 | `strsparqlcrawlerseasonproperties` |
 | 117 | `strsparqlcrawlerepisodeproperties` |
@@ -191,14 +195,37 @@ If you change the host path of the env file, update the `--env-file` argument in
 
 To enable / disable specific work, edit `arrwikidatascope` at [sparql-crawler.py:59](sparql-crawler.py#L59). Several alternate dictionaries are kept as commented-out presets — uncomment one (or build your own) and the next run will execute only those scopes, in the order they appear.
 
-Each scope's SQL `LIMIT`, SPARQL `lngbatchsize`, and refresh window is hard-coded inside its `if intindex == N:` block (or, for 118–127, inside the shared `arrt2sscope` block). Current defaults:
+Each scope's SQL `LIMIT` is read from a per-process server variable (lazily seeded with the default on first run, then editable in `T_WC_T2S_VARIABLE` without touching the code). SPARQL `lngbatchsize` and the refresh window remain hard-coded inside each `if intindex == N:` block (or, for 118–127, inside the shared `arrt2sscope` block). Current defaults:
 
-- `LIMIT` (rows pulled from MySQL per run): 1000 for movies / series / seasons / movie aliases / each T2S scope (118–127), 2000 for persons / episodes, 5000 for item-add (109), 1000 for person aliases.
+- `LIMIT` (rows pulled from MySQL per run, one server variable per scope — change the value in `T_WC_T2S_VARIABLE` to override):
+
+  | Scope | Server variable | Default |
+  | --- | --- | --- |
+  | 104 (movie properties) | `strsparqlaltcrawlermoviepropertieslimit` | 10000 |
+  | 105 (person properties, non-VIP) | `strsparqlaltcrawlerpersonpropertieslimit` | 20000 |
+  | 106 (movie aliases) | `strsparqlaltcrawlermoviealiaseslimit` | 500 |
+  | 107 (person aliases) | `strsparqlaltcrawlerpersonaliaseslimit` | 10000 |
+  | 109 (item add — also drives end-of-cycle reset) | `strsparqlaltcrawleritemslimit` | 5000 |
+  | 114 (serie properties) | `strsparqlaltcrawlerseriepropertieslimit` | 10000 |
+  | 115 (person properties, VIP) | _no LIMIT — walks every eligible person_ | — |
+  | 116 (season properties) | `strsparqlaltcrawlerseasonpropertieslimit` | 10000 |
+  | 117 (episode properties) | `strsparqlaltcrawlerepisodepropertieslimit` | 20000 |
+  | 118 (T2S collection) | `strsparqlaltcrawlert2scollectionpropertieslimit` | 10000 |
+  | 119 (T2S character) | `strsparqlaltcrawlert2scharacterpropertieslimit` | 10000 |
+  | 120 (T2S award) | `strsparqlaltcrawlert2sawardpropertieslimit` | 10000 |
+  | 121 (T2S nomination) | `strsparqlaltcrawlert2snominationpropertieslimit` | 10000 |
+  | 122 (T2S topic) | `strsparqlaltcrawlert2stopicpropertieslimit` | 10000 |
+  | 123 (T2S technical) | `strsparqlaltcrawlert2stechnicalpropertieslimit` | 10000 |
+  | 124 (T2S group) | `strsparqlaltcrawlert2sgrouppropertieslimit` | 10000 |
+  | 125 (T2S movement) | `strsparqlaltcrawlert2smovementpropertieslimit` | 10000 |
+  | 126 (T2S list) | `strsparqlaltcrawlert2slistpropertieslimit` | 10000 |
+  | 127 (T2S death) | `strsparqlaltcrawlert2sdeathpropertieslimit` | 10000 |
+
 - `lngbatchsize` (ids per SPARQL POST): 50 for movies / series / seasons / episodes / T2S entities (118–127), 25 for persons. Item-add (109) keeps the outer 500-id slice and sub-batches per language via `arrlangbatchsize = {1: 200, 2: 500}`.
 - Refresh window: `strdatjminus30` (30 days, the common cutoff, also used by 118–127) and `strdatjminus100` (100 days, used by 115 / VIP persons).
 - ORDER BY (T2S scopes 118–127): `IMDB_RATING_WEIGHTED DESC` for movie/serie-linked entities (collection, character, award, nomination, topic, technical, movement, list), `POPULARITY DESC` for people-linked entities (group, death).
 
-Tune those constants in-place when you need to throttle WDQS load or shorten the catch-up window. Smaller `lngbatchsize` values lower the chance of hitting the WDQS 60-second timeout on heavy property expansions but multiply the number of HTTP round-trips.
+Tune the LIMIT server variables when you need to widen / narrow a per-run pull without redeploying. Tune the hard-coded `lngbatchsize` in-place when you need to throttle WDQS load — smaller values lower the chance of hitting the WDQS 60-second timeout on heavy property expansions but multiply the number of HTTP round-trips.
 
 ---
 
