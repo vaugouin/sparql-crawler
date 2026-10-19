@@ -111,10 +111,14 @@ Keep Markdown, prompt files, JSON config, and logs UTF-8. These files contain no
 
 Built and run as a Docker container via the repo's `Dockerfile` (base `python:3.10.5-slim-buster`). The image installs `requirements.txt`, copies the repo into `/app`, and runs the crawler as `CMD ["python", "./sparql-crawler.py"]` — a one-shot batch job, no exposed ports or volumes. Secrets stay out of the image: `.env` and `citizenphilsecrets.py` are excluded by `.dockerignore` and supplied at runtime (e.g. `docker run --env-file`).
 
+## Clock (2026-10-19, DEPLOYMENT-015)
+
+Naive `DATETIME` / `DATE` columns hold naive Europe/Paris time: `datetime.now(cp.paris_tz)` (pytz, no `tzdata` needed), never a bare `datetime.now()` (UTC in the container) nor `NOW()` / `CURDATE()`. A human-read date is Europe/Paris with its offset, never a fixed `+02:00`. `tmdb_functions.py` is a byte-identical copy of tmdb-crawler's (clock fix SPARQL-CRAWLER-013, from TMDB-CRAWLER-034): change it there first, then here, and compare the hashes.
+
 ---
 
-**Last Updated**: 2026-06-03
-**Current Version**: 1.0.1 
+**Last Updated**: 2026-10-19
+**Current Version**: 1.0.2 
 
 ## Backlog (Nestor second-brain)
 
