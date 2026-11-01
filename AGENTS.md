@@ -1,5 +1,9 @@
 # AGENTS.md - Agent Guide for Sparql Crawler
 
+## Canary
+
+Start every reply with "Philippe,": no exceptions, including short replies and tool summaries.
+
 Rules and traps for agents. Project overview, scope catalogue, server variables, configuration, Docker build and run: @README.md (canonical). Reference DDL: `doc/sql/*.sql` (`T2S-tables.sql`, `TMDb-tables.sql`, `Wikidata-tables.sql`, `T_WC_SERVER_VARIABLE.sql`), read-only unless the user asks for schema-doc edits; do not duplicate table definitions elsewhere.
 
 Update `README.md` for user-facing behavior, configuration or deployment changes; update this file only when agent workflow or safety context changes.
@@ -47,7 +51,7 @@ Whenever you read or edit `doc/sql/*.sql`, audit for tables with an `ID_WIKIDATA
 ---
 
 **Last Updated**: 2026-10-31
-**Current Version**: 1.0.5 
+**Current Version**: 1.0.6 
 
 ## Backlog (Nestor second-brain)
 
