@@ -50,8 +50,8 @@ Whenever you read or edit `doc/sql/*.sql`, audit for tables with an `ID_WIKIDATA
 
 ---
 
-**Last Updated**: 2026-10-31
-**Current Version**: 1.0.7 
+**Last Updated**: 2026-11-11
+**Current Version**: 1.0.8
 
 ## Backlog (Nestor second-brain)
 
