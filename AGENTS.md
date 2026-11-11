@@ -14,7 +14,7 @@ Update `README.md` for user-facing behavior, configuration or deployment changes
 
 One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<repo>` and `github.com/vaugouin/<repo>`, converging on a shared MariaDB with `T_WC_*` tables). Canonical roster and stage map: `%USERPROFILE%/Nestor/projets/t2s-backlog/topics/related-repositories.txt`.
 
-**This repository's role:** acquisition, Wikidata V1 property model. Fetches properties, labels, descriptions and aliases of Wikidata items already linked to TMDb/T2S records into `T_WC_WIKIDATA_*`. Complemented by `sparql-movies-persons` (discovers the QID to TMDb links), superseded for bulk ingestion by the dump-based `wikidata-crawler` (V2). Feeds `tmdb-movie-preprocess` and the Wikidata sections of `tmdb-front`.
+**This repository's role:** acquisition, Wikidata V1 property model. Fetches properties, labels, descriptions and aliases of Wikidata items already linked to TMDb/T2S records into `T_WC_WIKIDATA_*`. Complemented by `sparql-movies-persons` (discovers the QID to TMDb links), superseded for bulk ingestion by the dump-based `wikidata-crawler` (V2). Feeds `tmdb-movie-preprocess` and the Wikidata sections of the web front `t2s-front` (formerly `tmdb-front`).
 
 ---
 
@@ -51,7 +51,7 @@ Whenever you read or edit `doc/sql/*.sql`, audit for tables with an `ID_WIKIDATA
 ---
 
 **Last Updated**: 2026-10-31
-**Current Version**: 1.0.6 
+**Current Version**: 1.0.7 
 
 ## Backlog (Nestor second-brain)
 
